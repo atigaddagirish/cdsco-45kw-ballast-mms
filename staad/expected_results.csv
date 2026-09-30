@@ -1,0 +1,9 @@
+combo,FY_J1_N,FY_J2_N,FY_J3_N,FY_J4_N,FX_J1_N,axial_AB_N(tension+),vert_disp_A_mm(down+),vert_disp_C_mm(down+),note
+C1 1.5DL+1.5WL(dn),1263.408,-623.889,-585.209,1187.120,156.323,-592.926,0.09002,0.08779,STAAD prints axial +ve=compression; reaction FY up=+
+C2 0.9DL+1.5WL(up),-1468.520,774.165,738.788,-1396.104,-280.238,724.527,-0.10443,-0.10297,STAAD prints axial +ve=compression; reaction FY up=+
+C3 1.5DL+1.5EQ(+x),327.390,-140.722,-132.896,311.432,-36.520,-138.908,0.02344,0.02312,STAAD prints axial +ve=compression; reaction FY up=+
+C4 1.5DL-1.5EQ(+x),338.278,-147.046,-126.482,300.453,36.520,-143.954,0.02416,0.02237,STAAD prints axial +ve=compression; reaction FY up=+
+C5 0.9DL+1.5EQ(+x),194.256,-83.168,-81.021,189.055,-36.520,-82.335,0.01392,0.01402,STAAD prints axial +ve=compression; reaction FY up=+
+C6 0.9DL-1.5EQ(+x),205.145,-89.492,-74.606,178.076,36.520,-87.382,0.01464,0.01327,STAAD prints axial +ve=compression; reaction FY up=+
+S1 DL+WL(dn),842.272,-415.926,-390.139,791.413,104.216,-395.284,0.06002,0.05853,STAAD prints axial +ve=compression; reaction FY up=+
+S2 DL+WL(up),-890.258,477.741,457.942,-849.151,-186.825,445.303,-0.06327,-0.06258,STAAD prints axial +ve=compression; reaction FY up=+
