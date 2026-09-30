@@ -1,0 +1,4 @@
+*.anl
+*.tmp
+~$*
+__pycache__/
