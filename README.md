@@ -10,6 +10,7 @@ EPC: M/s Sai Babuji Projects Pvt Ltd - Design & Engg: M/s JSP Solar Energy - Dra
 | `staad/CDSCO_45kW_Ballast_Frame.std` | STAAD.Pro plane-frame model (one frame), LSD combinations 11-18. **Not yet run in STAAD** (see `staad/REPORT_STEPS.md`). |
 | `staad/expected_results.csv` | Reactions / axial / displacements to match when STAAD is run. |
 | `report/CDSCO_45kW_Ballast_MMS_Design_Report.docx` | Load-calculation and design report with figures, sensitivity, observations, verification register. |
+| `report/CDSCO_45kW_Ballast_MMS_Design_Report.md` | Same report in Markdown (generated from the same engine; figures in `report/figures/`). |
 | `calc/` | Python engine (single source of truth `inputs.py`), independent matrix solver, generators, verification scripts. `make_all.sh` rebuilds everything. |
 | `docs/` | Drawing extraction, design-basis decisions, verification log. |
 

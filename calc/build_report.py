@@ -26,6 +26,13 @@ class Rep:
             h = d.styles["Heading %d" % lvl]; h.font.name = "Calibri"; h.font.size = Pt(sz); h.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
         self.fig = 0
 
+    def title(self, t):
+        p = self.d.add_paragraph(); r = p.add_run(t); r.bold = True; r.font.size = Pt(20); r.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
+
+    def pagebreak(self): self.d.add_page_break()
+
+    def save(self, out): self.d.save(out)
+
     def H(self, t, lvl=1): self.d.add_heading(t, lvl)
 
     def P(self, t, bold=False, italic=False, size=None, color=None):
@@ -64,14 +71,51 @@ class Rep:
         self.d.add_picture(os.path.join(FIG, name), width=Cm(w)); self.d.paragraphs[-1].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
 
+class RepMD:
+    """Markdown backend with the same interface as Rep (docx)."""
+    def __init__(self): self.out = []
+
+    def _w(self, t=""): self.out.append(t)
+
+    def title(self, t): self._w("# " + t.title() if t.isupper() else "# " + t); self._w()
+
+    def pagebreak(self): self._w("---"); self._w()
+
+    def H(self, t, lvl=1): self._w("#" * (lvl + 1) + " " + t); self._w()
+
+    def P(self, t, bold=False, italic=False, size=None, color=None):
+        t = t.replace("\n", " ")
+        self._w(("**%s**" % t) if bold else ("*%s*" % t) if italic else t); self._w()
+
+    def B(self, items):
+        for t in items: self._w("- " + ("**%s** %s" % (t[0].rstrip(), t[1]) if isinstance(t, tuple) else t))
+        self._w()
+
+    def T(self, head, rows, widths=None, fs=None, status_col=None):
+        esc = lambda v: str(v).replace("|", "\\|").replace("\n", " ")
+        self._w("| " + " | ".join(esc(h) for h in head) + " |"); self._w("|" + "|".join("---" for _ in head) + "|")
+        for row in rows:
+            cells = []
+            for i, v in enumerate(row):
+                v = esc(v); cells.append("**%s**" % v if status_col is not None and i == status_col and v in ("PASS", "FAIL", "REVIEW") else v)
+            self._w("| " + " | ".join(cells) + " |")
+        self._w()
+
+    def IMG(self, name, w=None):
+        self._w("![%s](figures/%s)" % (name.rsplit(".", 1)[0].replace("_", " "), name)); self._w()
+
+    def save(self, out):
+        open(out, "w", encoding="utf-8").write("\n".join(self.out) + "\n")
+
+
 def stat(x): return "PASS" if x <= 1.0 else "FAIL"
 
 
-def build(out):
+def build(out, backend=None):
     o = E.design(); p, g, w, L, mc, bal, env = o["p"], o["g"], o["w"], o["L"], o["mc"], o["bal"], o["env"]; cmb = o["cmb"]
     C1, C2 = cmb["C1 1.5DL+1.5WL(dn)"], cmb["C2 0.9DL+1.5WL(up)"]
-    R = Rep(); d = R.d
-    t = d.add_paragraph(); r = t.add_run("DESIGN CALCULATION REPORT"); r.bold = True; r.font.size = Pt(20); r.font.color.rgb = RGBColor(0x1F, 0x38, 0x64)
+    R = (backend or Rep)()
+    R.title("DESIGN CALCULATION REPORT")
     R.P("45 kWp Ballast-Type Rooftop Module Mounting Structure - CDSCO, Hyderabad", bold=True, size=13)
     R.T(["Item", "Detail"], [["Client / EPC", "M/s Sai Babuji Projects Pvt Ltd"], ["Design & Engg", "M/s JSP Solar Energy"], ["Drawing", "AL-001 R0 (10.09.2026, For Information); Hardware BOM (82 tables)"],
                              ["Document", "DC-CDSCO-45kWp-R0  -  DRAFT FOR REVIEW  -  %s" % datetime.date(2026, 9, 30).strftime("%d %b %Y")],
@@ -235,12 +279,12 @@ def build(out):
          "Not in scope: roof slab capacity, module clamp capacity, corrosion/HDG thickness, construction loads."])
     R.T(["Prepared", "Checked", "Approved"], [["", "", ""], ["Name / date:", "Name / date:", "Name / date:"]], widths=[5.7, 5.7, 5.7])
 
-    d.add_page_break()
+    R.pagebreak()
     R.H("Appendix A  Verification register")
     R.T(["#", "Value / provision", "Source", "Status", "Comment"], [[i + 1, a, b, c, dd] for i, (a, b, c, dd) in enumerate(REGISTER)], widths=[0.7, 5.0, 3.8, 3.3, 4.4], fs=7.5)
-    d.save(out); return out
+    R.save(out); return out
 
 
 if __name__ == "__main__":
     out = sys.argv[1] if len(sys.argv) > 1 else "../report/CDSCO_45kW_Ballast_MMS_Design_Report.docx"
-    build(out); print("wrote", out)
+    build(out, RepMD if out.endswith(".md") else None); print("wrote", out)
