@@ -1,5 +1,5 @@
 """Builds the linked Excel calculation workbook (formulas only). Run: python3 build_excel.py [out.xlsx]"""
-import re, sys
+import re, sys, os
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.workbook.defined_name import DefinedName
@@ -18,6 +18,7 @@ class Book:
 
     def name(self, nm, sheet, ref):
         assert nm not in self.names, "duplicate name " + nm
+        assert nm.lower() not in {k.lower() for k in self.names}, "case-insensitive duplicate name " + nm
         self.names[nm] = f"{sheet}!{ref}"
         self.wb.defined_names[nm] = DefinedName(nm, attr_text=f"{sheet}!{ref}")
 
@@ -101,13 +102,13 @@ def sh_inputs(bk):
     groups = [("Geometry - drawing AL-001 R0 (mm)", ["base_len", "base_end_A", "base_end_C", "vert_len", "vert_end", "incl_len",
                "incl_end_B", "incl_end_C", "slot_end", "slot_cc_dwg", "J_off", "J_pair", "J_mid", "J_gauge", "edge_min", "block_w",
                "block_h", "block_L", "bolt_h", "e_mod"]),
-              ("Module & layout", ["mod_L", "mod_W", "mod_t", "mod_kg", "frame_sp"]),
+              ("Module & layout", ["mod_L", "mod_W", "mod_t", "mod_kg", "frame_sp", "wind_mode"]),
               ("Wind - IS 875 (Part 3)", ["Vb", "k1_risk", "terrain", "k3_topo", "k4_imp", "Kd_dir", "Ka_area", "Kc_comb", "z_bldg"]),
               ("Seismic - IS 1893 (Part 1):2016", ["Zf", "I_imp", "SaG", "Rp", "zh"]),
               ("Steel & bolts - IS 800:2007", ["fy", "fu", "Es", "gamma_m0", "gamma_m1", "gamma_mb", "gam_s", "gacc", "fub88", "fyb88",
                "fub_ss", "fyb_ss", "k_over", "d0_14", "d0_J", "d0_M8", "defl_div"]),
               ("Concrete / ballast - IS 875-1, IS 456", ["gam_c", "fck", "mu_f", "dl_stab", "ll_fac"])]
-    fm = {"terrain": "0", "fck": "0", "Vb": "0.0"}
+    fm = {"terrain": "0", "fck": "0", "Vb": "0.0", "wind_mode": "0"}
     for title, keys in groups:
         s.section(title)
         for k in keys:
@@ -190,8 +191,9 @@ def sh_geometry(bk):
     s.std_header(); s.section("Frame triangle A-B-C (bolt centres)")
     s.row("g_AC", "A-C: base bolt c/c", "=base_len-base_end_A-base_end_C", "mm", "1200-27.5-25", "V", fmt="0.00")
     s.row("g_AB", "A-B: vertical member bolt c/c", "=vert_len-2*vert_end", "mm", "249.72-2*22.5", "V", fmt="0.00")
-    s.row("g_BC", "B-C: inclined member bolt c/c", "=incl_len-incl_end_B-incl_end_C", "mm", "1222.01-27.47-28.92", "V", fmt="0.00")
-    s.row("g_closure", "Closure check  hypot(AC,AB) - BC  (must be ~0)", "=SQRT(g_AC^2+g_AB^2)-g_BC", "mm", "drawn dims close the triangle to 0.002 mm", "V", fmt="0.0000")
+    s.row("g_BCdwg", "B-C: inclined member bolt c/c AS DRAWN", "=incl_len-incl_end_B-incl_end_C", "mm", "1222.01-27.47-28.92", "V", fmt="0.00")
+    s.row("g_BC", "B-C working length = hypot(AC, AB)", "=SQRT(g_AC^2+g_AB^2)", "mm", "triangle closes exactly (R1: removes 1.3e-6 rounding inconsistency)", "V", fmt="0.0000")
+    s.row("g_closure", "Closure check  working - drawn B-C  (must be ~0)", "=g_BC-g_BCdwg", "mm", "drawn dims close the triangle to 0.002 mm", "V", fmt="0.0000")
     s.row("g_tilt", "Tilt angle", "=ATAN(g_AB/g_AC)", "rad", "atan(AB/AC)", "V", fmt="0.00000")
     s.row("g_tilt_deg", "Tilt angle", "=DEGREES(g_tilt)", "deg", "NOT atan(250/1200)=11.77 (ignores hole offsets)", "V", fmt="0.000")
     s.row("g_cos", "cos(tilt)", "=COS(g_tilt)", "-", "", fmt="0.000000"); s.row("g_sin", "sin(tilt)", "=SIN(g_tilt)", "-", "", fmt="0.000000")
@@ -211,6 +213,16 @@ def sh_geometry(bk):
     s.row("g_slot_cc", "Slot c/c (computed)", "=g_s2-g_s1", "mm", "", fmt="0.00"); s.row("g_slot_chk", "Check vs drawn 1088", "=g_slot_cc-slot_cc_dwg", "mm", "0.01 rounding", "V", fmt="0.000")
     s.row("g_S1x", "S1 x", "=g_s1*g_cos", "mm", "", fmt="0.00"); s.row("g_S1y", "S1 y", "=g_yB-g_s1*g_sin", "mm", "", fmt="0.00")
     s.row("g_S2x", "S2 x", "=g_s2*g_cos", "mm", "", fmt="0.00"); s.row("g_S2y", "S2 y", "=g_yB-g_s2*g_sin", "mm", "", fmt="0.00")
+    s.section("Module contact zone on the rafter (module rests DIRECTLY on the rafter - no purlins)")
+    s.row("g_sc", "Module centre along rafter from B (= mid of module bolts)", "=(g_s1+g_s2)/2", "mm", "module centred on its 4 bolts", "I", fmt="0.00")
+    s.row("g_Lm", "Module contact length along rafter = module width", "=mod_W", "mm", "module lies parallel to the rafter", "V", fmt="0.00")
+    s.row("g_sa", "Contact zone starts (from B)", "=g_sc-g_Lm/2", "mm", "", "I", fmt="0.00"); s.row("g_sb", "Contact zone ends (from B)", "=g_sc+g_Lm/2", "mm", "", "I", fmt="0.00")
+    s.row("g_zone_ok", "Zone lies within rafter physical length?", '=IF(AND(g_sa>=-incl_end_B,g_sb<=g_BC+incl_end_C),"PASS","FAIL")', "", "-27.47 .. B-C + 28.92", fmt="@")
+    s.row("g_mod_ovh", "Module overhang beyond each rafter (carried by the module itself)", "=(mod_L-frame_sp)/2", "mm", "(2279 - 1400)/2", "I", fmt="0.0")
+    s.row("g_sM", "Node M position (mid of module bolts)", "=g_sc", "mm", "", fmt="0.00")
+    s.row("g_Pax", "Pa = zone start: x", "=g_sa*g_cos", "mm", "STAAD node 11", fmt="0.000"); s.row("g_Pay", "Pa: y", "=g_yB-g_sa*g_sin", "mm", "", fmt="0.000")
+    s.row("g_Pbx", "Pb = zone end: x", "=g_sb*g_cos", "mm", "STAAD node 12", fmt="0.000"); s.row("g_Pby", "Pb: y", "=g_yB-g_sb*g_sin", "mm", "", fmt="0.000")
+    s.row("g_Mx", "M: x", "=g_sM*g_cos", "mm", "STAAD node 9", fmt="0.000"); s.row("g_My", "M: y", "=g_yB-g_sM*g_sin", "mm", "", fmt="0.000")
     s.row("g_xQ", "Wind resultant point x (module mid-plane, between slots)", "=(g_S1x+g_S2x)/2+e_mod*g_sin", "mm", "normal offset e_mod", "I", fmt="0.00")
     s.row("g_yQ", "Wind resultant point y", "=(g_S1y+g_S2y)/2+e_mod*g_cos", "mm", "", "I", fmt="0.00")
     s.section("Base-beam constants (three-moment equation, constant EI)")
@@ -256,6 +268,15 @@ def sh_loads(bk):
     s.row("l_Winc", "Inclined member weight", "=l_ws*incl_len", "N", "", fmt="0.0")
     s.row("l_stubA", "Base stub weight beyond A", "=l_ws*base_end_A", "N", "lumped at A", fmt="0.00"); s.row("l_stubC", "Base stub weight beyond C", "=l_ws*base_end_C", "N", "lumped at C", fmt="0.00")
     s.row("l_slotdl", "Dead load per slot = Wm/4 + Winc/2", "=l_Wm/4+l_Winc/2", "N", "module 4 bolts; incl. member split to 2 slots", fmt="0.00")
+    s.section("R1  Module dead load as UDL on the rafter - tributary derivation (client comment: no purlins, module bears directly on rafters)")
+    s.row("l_pm", "Module weight per unit area = Wm / (L x W)", "=l_Wm/(mod_L*mod_W)", "N/mm2", "uniform over the module", fmt="0.000000")
+    s.row("l_pm_kN", "   same, in kN/m2", "=l_pm*1000", "kN/m2", "", fmt="0.0000")
+    s.row("l_trib", "Tributary width per rafter = L/2", "=mod_L/2", "mm", "2 rafters at 1400 c/c, symmetric overhangs (g_mod_ovh each side) -> each rafter takes half the module", "I", fmt="0.0")
+    s.row("l_udl_m", "Module UDL on one rafter = pm x tributary width", "=l_pm*l_trib", "N/mm", "numerically = kN/m; per mm of rafter length, vertical", "I", fmt="0.00000")
+    s.row("l_udl_chk", "Check: UDL x contact length - Wm/2  (must be 0)", "=l_udl_m*g_Lm-l_Wm/2", "N", "load conserved", fmt="0.0000")
+    s.row("l_udl_r", "Rafter self-weight UDL = Winc / B-C  (stubs spread)", "=l_Winc/g_BC", "N/mm", "weight conserved", fmt="0.00000")
+    s.row("l_qu", "Wind uplift as UDL over contact length (wind_mode = 1 only)", "=(w_Nup/2)/g_Lm", "N/mm", "normal to module; = N per frame / contact length", fmt="0.00000")
+    s.row("l_qd", "Wind downward as UDL over contact length (wind_mode = 1 only)", "=(w_Ndn/2)/g_Lm", "N/mm", "", fmt="0.00000")
     s.section("Seismic - IS 1893 (Part 1):2016 (horizontal only)")
     s.row("l_Ah", "Ah = (Z/2) I (Sa/g)(1+z/h)/Rp", "=Zf/2*I_imp*SaG*(1+zh)/Rp", "-", "component at roof level; clause text not retrievable offline", "I", fmt="0.0000",
           note="Sensitivity: Rp=1 gives Ah=0.25")
@@ -265,31 +286,55 @@ def sh_loads(bk):
 LCS = ["DL", "WLU", "WLD", "EQX"]
 LC_TITLE = {"DL": "DL  dead", "WLU": "WL uplift", "WLD": "WL downward", "EQX": "EQ +x"}
 # (key, label, unit, fmt, formula-or-list, basis)
+def _clm(sx): return f"MAX(0,MIN({sx},g_sb)-g_sa)"
+def _clr(sx): return f"MAX(0,MIN({sx},g_BC))"
+def _Mf(sx, pts):
+    """closed-form moment (closed-form sign: = -sagging) at distance sx from B; pts = ('Fn*MAX(0,sx-g_s1)', ...) """
+    gm = f"IF({sx}>g_sa,{_clm(sx)}*({sx}-(g_sa+MIN({sx},g_sb))/2),0)"; gr = f"{_clr(sx)}*({sx}-MIN({sx},g_BC)/2)"
+    return "=-({VB}*g_cos*" + sx + pts + "+{qnm}*" + gm + "+{qnr}*" + gr + ")"
+_SECS = [("0", "0", 0, 0, "at B"), ("a", "g_sa", 0, 0, "start of module contact"), ("1m", "g_s1", 0, 0, "just before module bolt 1"), ("1p", "g_s1", 1, 0, "just after module bolt 1"),
+         ("2m", "g_s2", 1, 0, "just before module bolt 2"), ("2p", "g_s2", 1, 1, "just after module bolt 2"), ("b", "g_sb", 1, 1, "end of module contact"), ("L", "g_BC", 1, 1, "at C")]
+_sec_rows = []
+for nm, sx, i1, i2, lab in _SECS:
+    _sec_rows.append(("N_" + nm, f"Axial in rafter, {lab} (tension +)", "N", "#,##0.00", "={VB}*g_sin-{Ft}*" + str(i1 + i2) + "-{qtm}*" + _clm(sx) + "-{qtr}*" + _clr(sx), "piecewise linear"))
+for nm, sx, i1, i2, lab in _SECS:
+    _sec_rows.append(("V_" + nm, f"Shear in rafter, {lab}", "N", "#,##0.00", "=-({VB}*g_cos+{Fn}*" + str(i1 + i2) + "+{qnm}*" + _clm(sx) + "+{qnr}*" + _clr(sx) + ")", "piecewise linear"))
+
 AN_ROWS = [
- ("_h", "Applied loads per frame (per slot = per module bolt)", None, None, None, None),
- ("Fx_s", "Fx per slot (x right +)", "N", "#,##0.00", ["=0", "=w_Fn_u*g_sin", "=-w_Fn_d*g_sin", "=l_Ah*l_slotdl"], "WL normal to module; EQ horizontal"),
- ("Fy_s", "Fy per slot (y up +)", "N", "#,##0.00", ["=-l_slotdl", "=w_Fn_u*g_cos", "=-w_Fn_d*g_cos", "=0"], ""),
+ ("_h", "Applied loads per frame - module bolts, module UDL zone, rafter UDL, direct loads at A and C", None, None, None, None),
+ ("Fx_s", "Point load per module bolt, Fx (x right +)", "N", "#,##0.00", ["=0", "=IF(wind_mode=0,w_Fn_u*g_sin,0)", "=IF(wind_mode=0,-w_Fn_d*g_sin,0)", "=0"], "wind_mode 0: wind through the 4 module bolts"),
+ ("Fy_s", "Point load per module bolt, Fy (y up +)", "N", "#,##0.00", ["=0", "=IF(wind_mode=0,w_Fn_u*g_cos,0)", "=IF(wind_mode=0,-w_Fn_d*g_cos,0)", "=0"], "R1: module DEAD load is NOT a point load any more"),
+ ("qmx", "Module UDL on rafter over contact length, x-component", "N/mm", "0.00000", ["=0", "=IF(wind_mode=1,l_qu*g_sin,0)", "=IF(wind_mode=1,-l_qd*g_sin,0)", "=l_Ah*l_udl_m"], "per mm of rafter length, global x"),
+ ("qmy", "Module UDL on rafter over contact length, y-component", "N/mm", "0.00000", ["=-l_udl_m", "=IF(wind_mode=1,l_qu*g_cos,0)", "=IF(wind_mode=1,-l_qd*g_cos,0)", "=0"], "DL: module weight x tributary width / contact length"),
+ ("qrx", "Rafter self-weight / seismic UDL over full B-C, x", "N/mm", "0.00000", ["=0", "=0", "=0", "=l_Ah*l_udl_r"], ""),
+ ("qry", "Rafter self-weight UDL over full B-C, y", "N/mm", "0.00000", ["=-l_udl_r", "=0", "=0", "=0"], ""),
  ("FxA", "Direct horizontal load at A", "N", "#,##0.00", ["=0", "=0", "=0", "=l_Ah*(l_Wv+l_stubA+0.5*l_ws*g_AC)"], "EQ on vertical+base masses"),
  ("FxC", "Direct horizontal load at C", "N", "#,##0.00", ["=0", "=0", "=0", "=l_Ah*(l_stubC+0.5*l_ws*g_AC)"], ""),
  ("dAy", "Direct downward load at A (vert. member + stub)", "N", "#,##0.00", ["=l_Wv+l_stubA", "=0", "=0", "=0"], ""),
  ("dCy", "Direct downward load at C (stub)", "N", "#,##0.00", ["=l_stubC", "=0", "=0", "=0"], ""),
  ("wb", "UDL on base member (down +)", "N/mm", "0.00000", ["=l_ws", "=0", "=0", "=0"], "self-weight"),
- ("_h", "Step 1 - inclined member B-C (pin at C; vertical member = 2-force member)", None, None, None, None),
- ("msum", "Sum of moments of slot loads about C", "N.mm", "#,##0", "=(g_S1x-g_AC)*{Fy_s}-(g_S1y-g_yA)*{Fx_s}+(g_S2x-g_AC)*{Fy_s}-(g_S2y-g_yA)*{Fx_s}", "M_C = sum[(x-xC)Fy - (y-yC)Fx]"),
- ("VB", "Vertical force on incl. member at B (up +)", "N", "#,##0.00", "=-{msum}/(0-g_AC)", "moment equilibrium about C"),
- ("Cx", "Force on incl. member at C, x", "N", "#,##0.00", "=-2*{Fx_s}", "sum Fx = 0"),
- ("Cy", "Force on incl. member at C, y", "N", "#,##0.00", "=-(2*{Fy_s}+{VB})", "sum Fy = 0"),
+ ("Fnb", "Module-bolt force per bolt, normal to rafter (up/out +)", "N", "#,##0.00", ["=-(l_Wm/4)*g_cos", "=w_Fn_u", "=-w_Fn_d", "=l_Ah*(l_Wm/4)*g_sin"], "connection load path: 4 M8 bolts carry the module"),
+ ("Ftb", "Module-bolt force per bolt, along rafter (B->C +)", "N", "#,##0.00", ["=(l_Wm/4)*g_sin", "=0", "=0", "=l_Ah*(l_Wm/4)*g_cos"], "used for M8 bolt shear"),
+ ("_h", "Step 1 - rafter B-C (pin at C; vertical member = 2-force member). Load items: 2 module-bolt points + module UDL + rafter UDL", None, None, None, None),
+ ("msum_p", "Moment about C of module-bolt point loads", "N.mm", "#,##0", "=(g_S1x-g_AC)*{Fy_s}-(g_S1y-g_yA)*{Fx_s}+(g_S2x-g_AC)*{Fy_s}-(g_S2y-g_yA)*{Fx_s}", "M_C = sum[(x-xC)Fy - (y-yC)Fx]"),
+ ("msum_m", "Moment about C of module UDL resultant (at module centre)", "N.mm", "#,##0", "=(g_sc*g_cos-g_AC)*{qmy}*g_Lm-(g_yB-g_sc*g_sin-g_yA)*{qmx}*g_Lm", "resultant q x contact length"),
+ ("msum_r", "Moment about C of rafter UDL resultant (at mid B-C)", "N.mm", "#,##0", "=(g_BC/2*g_cos-g_AC)*{qry}*g_BC-(g_yB-g_BC/2*g_sin-g_yA)*{qrx}*g_BC", ""),
+ ("VB", "Vertical force on rafter at B (up +)", "N", "#,##0.00", "=-({msum_p}+{msum_m}+{msum_r})/(0-g_AC)", "moment equilibrium about C"),
+ ("Cx", "Force on rafter at C, x", "N", "#,##0.00", "=-(2*{Fx_s}+{qmx}*g_Lm+{qrx}*g_BC)", "sum Fx = 0"),
+ ("Cy", "Force on rafter at C, y", "N", "#,##0.00", "=-(2*{Fy_s}+{qmy}*g_Lm+{qry}*g_BC+{VB})", "sum Fy = 0"),
  ("NAB", "Axial force in vertical member (tension +)", "N", "#,##0.00", "=-{VB}", "joint B"),
- ("Fn", "Slot load component normal to member", "N", "#,##0.00", "={Fx_s}*g_sin+{Fy_s}*g_cos", "n=(sin,cos)"),
- ("Ft", "Slot load component along member (B->C)", "N", "#,##0.00", "={Fx_s}*g_cos-{Fy_s}*g_sin", "d=(cos,-sin)"),
- ("Ninc1", "Axial, segment B-S1 (tension +)", "N", "#,##0.00", "={VB}*g_sin", ""),
- ("Ninc2", "Axial, segment S1-S2", "N", "#,##0.00", "={Ninc1}-{Ft}", ""),
- ("Ninc3", "Axial, segment S2-C", "N", "#,##0.00", "={Ninc2}-{Ft}", ""),
- ("Minc1", "Moment at S1", "N.mm", "#,##0", "=-{VB}*g_cos*g_s1", "normal comps only"),
- ("Minc2", "Moment at S2", "N.mm", "#,##0", "=-({VB}*g_cos*g_s2+{Fn}*(g_s2-g_s1))", ""),
- ("Vinc1", "Shear, segment B-S1", "N", "#,##0.00", "=-{VB}*g_cos", ""),
- ("Vinc2", "Shear, segment S1-S2", "N", "#,##0.00", "={Vinc1}-{Fn}", ""),
- ("Vinc3", "Shear, segment S2-C", "N", "#,##0.00", "={Vinc2}-{Fn}", ""),
+ ("Fn", "Point load per bolt: component normal to rafter", "N", "#,##0.00", "={Fx_s}*g_sin+{Fy_s}*g_cos", "n=(sin,cos)"),
+ ("Ft", "Point load per bolt: component along rafter (B->C)", "N", "#,##0.00", "={Fx_s}*g_cos-{Fy_s}*g_sin", "d=(cos,-sin)"),
+ ("qnm", "Module UDL, normal component", "N/mm", "0.00000", "={qmx}*g_sin+{qmy}*g_cos", ""),
+ ("qtm", "Module UDL, tangential component", "N/mm", "0.00000", "={qmx}*g_cos-{qmy}*g_sin", ""),
+ ("qnr", "Rafter UDL, normal component", "N/mm", "0.00000", "={qrx}*g_sin+{qry}*g_cos", ""),
+ ("qtr", "Rafter UDL, tangential component", "N/mm", "0.00000", "={qrx}*g_cos-{qry}*g_sin", ""),
+ ("qn", "Total distributed normal load (deflection)", "N/mm", "0.00000", "={qnm}+{qnr}", ""),
+] + _sec_rows + [
+ ("Minc1", "Moment at module bolt 1 (closed-form sign = -sagging)", "N.mm", "#,##0", _Mf("g_s1", "+{Fn}*MAX(0,g_s1-g_s1)+{Fn}*MAX(0,g_s1-g_s2)"), "Macaulay sum from B"),
+ ("Minc2", "Moment at module bolt 2", "N.mm", "#,##0", _Mf("g_s2", "+{Fn}*MAX(0,g_s2-g_s1)+{Fn}*MAX(0,g_s2-g_s2)"), ""),
+ ("MincM", "Moment at node M (mid of module bolts)", "N.mm", "#,##0", _Mf("g_sM", "+{Fn}*MAX(0,g_sM-g_s1)+{Fn}*MAX(0,g_sM-g_s2)"), "for STAAD comparison"),
+ ("MincL", "Moment at C (must be 0: pin)", "N.mm", "#,##0.0000", _Mf("g_BC", "+{Fn}*MAX(0,g_BC-g_s1)+{Fn}*MAX(0,g_BC-g_s2)"), "equilibrium check"),
  ("_h", "Step 2 - base member on 4 J-bolt supports (continuous beam, three-moment equation)", None, None, None, None),
  ("PA", "Downward load on base at A", "N", "#,##0.00", "={dAy}-{NAB}", "vertical member pulls A up if in tension"),
  ("PC", "Downward load on base at C", "N", "#,##0.00", "={dCy}+{Cy}", ""),
@@ -325,7 +370,8 @@ AN_ROWS = [
  ("dC", "Deflection at C", "mm", "0.00000", "={th4}*g_c2+({PC}*g_c2^3/3+{wb}*g_c2^4/8)/(Es*g_Ieff)", ""),
  ("_h", "Equilibrium self-checks (must be 0)", None, None, None, None),
  ("eqV", "sum(R) - sum(loads) on base", "N", "0.0000", "=({R1}+{R2}+{R3}+{R4})-({PA}+{PC}+{wb}*g_AC)", "vertical equilibrium"),
- ("eqN", "Inclined end axial at C  -  (Cx cos - Cy sin)", "N", "0.0000", "={Ninc3}-({Cx}*g_cos-{Cy}*g_sin)", "independent identity"),
+ ("eqN", "Rafter end axial at C  -  (Cx cos - Cy sin)", "N", "0.0000", "={N_L}-({Cx}*g_cos-{Cy}*g_sin)", "independent identity"),
+ ("eqM", "Rafter moment at C (pin)", "N.mm", "0.0000", "={MincL}", "must be 0"),
 ]
 
 
@@ -361,11 +407,16 @@ COMBO_LIST = [("C1", "1.5DL + 1.5WL(down)", (1.5, 0, 1.5, 0), "U"), ("C2", "0.9D
               ("C3", "1.5DL + 1.5EQ(+x)", (1.5, 0, 0, 1.5), "U"), ("C4", "1.5DL - 1.5EQ(+x)", (1.5, 0, 0, -1.5), "U"),
               ("C5", "0.9DL + 1.5EQ(+x)", (0.9, 0, 0, 1.5), "U"), ("C6", "0.9DL - 1.5EQ(+x)", (0.9, 0, 0, -1.5), "U"),
               ("S1", "DL + WL(down)  [service]", (1, 0, 1, 0), "S"), ("S2", "DL + WL(up)  [service]", (1, 1, 0, 0), "S")]
-CB_KEYS = ["VB", "Cx", "Cy", "NAB", "Fn", "Ft", "Ninc1", "Ninc2", "Ninc3", "Minc1", "Minc2", "Vinc1", "Vinc2", "Vinc3", "NbA", "NbC", "RH1",
-           "M1", "M2", "M3", "M4", "Mm1", "Mm2", "Mm3", "V1m", "V1p", "V2m", "V2p", "V3m", "V3p", "V4m", "V4p", "R1", "R2", "R3", "R4", "dA", "dC"]
-CB_DERIVED = [("Rc", "Resultant at joint C = SQRT(Cx^2+Cy^2)", "N", "=SQRT({Cx}^2+{Cy}^2)"), ("Fnpos", "Module bolt tension = MAX(Fn,0)", "N", "=MAX({Fn},0)"),
-              ("Ftabs", "Module bolt shear = ABS(Ft)", "N", "=ABS({Ft})"), ("Tb1", "Block 1 net uplift = MAX(0,-(R1+R2))", "N", "=MAX(0,-({R1}+{R2}))"),
-              ("Tb2", "Block 2 net uplift = MAX(0,-(R3+R4))", "N", "=MAX(0,-({R3}+{R4}))"), ("Tj", "J-bolt max tension = MAX(0,-MIN(R1..R4))", "N", "=MAX(0,-MIN({R1},{R2},{R3},{R4}))")]
+CB_KEYS = (["VB", "Cx", "Cy", "NAB", "Fn", "Ft", "qnm", "qnr", "qn"] + ["N_" + k for k in ("0", "a", "1m", "1p", "2m", "2p", "b", "L")] +
+           ["V_" + k for k in ("0", "a", "1m", "1p", "2m", "2p", "b", "L")] +
+           ["Minc1", "Minc2", "MincM", "NbA", "NbC", "RH1", "M1", "M2", "M3", "M4", "Mm1", "Mm2", "Mm3", "V1m", "V1p", "V2m", "V2p", "V3m", "V3p", "V4m", "V4p",
+            "R1", "R2", "R3", "R4", "dA", "dC", "Fnb", "Ftb"])
+CB_DERIVED = [("Rc", "Resultant at joint C = SQRT(Cx^2+Cy^2)", "N", "=SQRT({Cx}^2+{Cy}^2)"), ("Fnbpos", "Module bolt tension per bolt = MAX(Fnb,0)", "N", "=MAX({Fnb},0)"),
+              ("Ftbabs", "Module bolt shear per bolt = ABS(Ftb)", "N", "=ABS({Ftb})"), ("Tb1", "Block 1 net uplift = MAX(0,-(R1+R2))", "N", "=MAX(0,-({R1}+{R2}))"),
+              ("Tb2", "Block 2 net uplift = MAX(0,-(R3+R4))", "N", "=MAX(0,-({R3}+{R4}))"), ("Tj", "J-bolt max tension = MAX(0,-MIN(R1..R4))", "N", "=MAX(0,-MIN({R1},{R2},{R3},{R4}))"),
+              ("sstar", "Rafter: section of zero shear between module bolts (clamped to S1..S2)", "mm", "=MIN(MAX((-({VB}*g_cos+{Fn})+{qnm}*g_sa)/({qnm}+{qnr}),g_s1),g_s2)"),
+              ("Mstar", "Rafter: moment at zero-shear section s*", "N.mm", "=-({VB}*g_cos*{sstar}+{Fn}*({sstar}-g_s1)+{qnm}*({sstar}-g_sa)^2/2+{qnr}*{sstar}^2/2)"),
+              ("Minc_abs", "Rafter: governing |M| = max(|M(S1)|, |M(S2)|, |M(s*)|)", "N.mm", "=MAX(ABS({Minc1}),ABS({Minc2}),ABS({Mstar}))")]
 
 
 def sh_combos(bk):
@@ -411,7 +462,7 @@ def sh_combos(bk):
     for rr in range(frow["DL"] + 4, last + 1):
         ws.cell(rr, 12, f"=MAX(D{rr}:I{rr})").number_format = "#,##0.00"; ws.cell(rr, 13, f"=MIN(D{rr}:I{rr})").number_format = "#,##0.00"
         ws.cell(rr, 14, f"=MAX(L{rr},-M{rr})").number_format = "#,##0.00"
-        unit = [x for x in AN_ROWS if x[0] == ws.cell(rr, 3).value]; ws.cell(rr, 15, unit[0][2] if unit else "N")
+        unit = [x for x in AN_ROWS if x[0] == ws.cell(rr, 3).value]; ws.cell(rr, 15, unit[0][2] if unit else {"sstar": "mm", "Mstar": "N.mm", "Minc_abs": "N.mm"}.get(ws.cell(rr, 3).value, "N"))
         for cc in range(4, 15): ws.cell(rr, cc).border = BORDER
     ws.freeze_panes = "D6"; bk.cb_ws = ws
 
@@ -465,8 +516,8 @@ def sh_members(bk):
     s.section("Demands (envelope of strength combinations) and checks")
     a = lambda k: CB(bk, k, "N"); mx = lambda k: CB(bk, k, "L"); mn = lambda k: CB(bk, k, "M")
     s.row("m_vT", "Vertical member: max tension", f"=MAX(0,{mx('NAB')})", "N", "Combos", fmt="#,##0.0"); s.row("m_vC", "Vertical member: max compression", f"=MAX(0,-{mn('NAB')})", "N", "", fmt="#,##0.0")
-    s.row("m_iT", "Inclined: max tension (3 segments)", f"=MAX(0,MAX({CBR(bk,'Ninc1','Ninc3')}))", "N", "", fmt="#,##0.0"); s.row("m_iC", "Inclined: max compression", f"=MAX(0,-MIN({CBR(bk,'Ninc1','Ninc3')}))", "N", "", fmt="#,##0.0")
-    s.row("m_iM", "Inclined: max |M| (at slots)", f"={absmax(CBR(bk,'Minc1','Minc2'))}", "N.mm", "", fmt="#,##0"); s.row("m_iV", "Inclined: max |V|", f"={absmax(CBR(bk,'Vinc1','Vinc3'))}", "N", "", fmt="#,##0.0")
+    s.row("m_iT", "Rafter: max tension (8 sections)", f"=MAX(0,MAX({CBR(bk,'N_0','N_L')}))", "N", "Combos", fmt="#,##0.0"); s.row("m_iC", "Rafter: max compression", f"=MAX(0,-MIN({CBR(bk,'N_0','N_L')}))", "N", "", fmt="#,##0.0")
+    s.row("m_iM", "Rafter: max |M| (module-bolt sections and zero-shear section)", f"={CB(bk,'Minc_abs','L')}", "N.mm", "R1: UDL moment included", fmt="#,##0"); s.row("m_iV", "Rafter: max |V|", f"={absmax(CBR(bk,'V_0','V_L'))}", "N", "", fmt="#,##0.0")
     s.row("m_bT", "Base: max axial tension", f"=MAX(0,MAX({CBR(bk,'NbA','NbC')}))", "N", "", fmt="#,##0.0"); s.row("m_bC", "Base: max axial compression", f"=MAX(0,-MIN({CBR(bk,'NbA','NbC')}))", "N", "", fmt="#,##0.0")
     s.row("m_bMs", "Base: max |M| at J-bolt sections", f"={absmax(CBR(bk,'M1','M4'))}", "N.mm", "", fmt="#,##0"); s.row("m_bMm", "Base: max |M| mid-span", f"={absmax(CBR(bk,'Mm1','Mm3'))}", "N.mm", "", fmt="#,##0")
     s.row("m_bV", "Base: max |V|", f"={absmax(CBR(bk,'V1m','V4p'))}", "N", "", fmt="#,##0.0")
@@ -493,7 +544,7 @@ def sh_connections(bk):
     joints = [("A", "M10", "M10 HDG 8.8  base-vertical (joint A)", "fub88", "fyb88", "d0_14", f"={CB(bk,'VB','N')}", "=0"),
               ("B", "M10", "M10 HDG 8.8  vertical-inclined (joint B)", "fub88", "fyb88", "d0_14", f"={CB(bk,'VB','N')}", "=0"),
               ("C", "M12", "M12 HDG 8.8  base-inclined (joint C)", "fub88", "fyb88", "d0_14", f"={CB(bk,'Rc','L')}", "=0"),
-              ("M", "M8", "M8 SS-304 (A2-70)  module-inclined (slot 9x14)", "fub_ss", "fyb_ss", "d0_M8", f"={CB(bk,'Ftabs','L')}", f"={CB(bk,'Fnpos','L')}")]
+              ("M", "M8", "M8 SS-304 (A2-70)  module-inclined (slot 9x14)", "fub_ss", "fyb_ss", "d0_M8", f"={CB(bk,'Ftbabs','L')}", f"={CB(bk,'Fnbpos','L')}")]
     for j, nm, lab, fub, fyb, d0, V, T in joints:
         s.section(lab)
         s.row(f"c{j}_kb", "kb = min(e/(3 d0), fub/fu, 1.0)  (single bolt, no pitch)", f"=MIN(edge_min/(3*{d0}),{fub}/fu,1)", "-", "cl 10.3.4", "V", fmt="0.000", note="e = 22.5 mm (smaller edge/end distance)")
@@ -528,8 +579,9 @@ def sh_ballast(bk):
     s.row("b_Wfs", "Non-ballast dead load per frame", "=b_Wmh+b_Wfr", "N", "", fmt="0.0"); s.row("b_Wtot", "Total dead load per frame incl. 2 blocks", "=b_Wfs+2*b_Wb1", "N", "", fmt="0.0")
     s.section("Wind resultant per frame (sum of 2 slot loads, unfactored)")
     ar = bk.reg["Analysis"]
-    s.row("b_Fux", "Uplift case: Fx", f"=2*Analysis!$E${ar['Fx_s']}", "N", "", fmt="0.0"); s.row("b_Fuy", "Uplift case: Fy (up)", f"=2*Analysis!$E${ar['Fy_s']}", "N", "", fmt="0.0")
-    s.row("b_Fdx", "Downward case: Fx", f"=2*Analysis!$F${ar['Fx_s']}", "N", "", fmt="0.0"); s.row("b_Fdy", "Downward case: Fy", f"=2*Analysis!$F${ar['Fy_s']}", "N", "", fmt="0.0")
+    res_ = lambda col, k1, kq1, kq2: f"=2*Analysis!${col}${ar[k1]}+Analysis!${col}${ar[kq1]}*g_Lm+Analysis!${col}${ar[kq2]}*g_BC"
+    s.row("b_Fux", "Uplift case: Fx (module bolts + UDL)", res_("E", "Fx_s", "qmx", "qrx"), "N", "", fmt="0.0"); s.row("b_Fuy", "Uplift case: Fy (up)", res_("E", "Fy_s", "qmy", "qry"), "N", "", fmt="0.0")
+    s.row("b_Fdx", "Downward case: Fx", res_("F", "Fx_s", "qmx", "qrx"), "N", "", fmt="0.0"); s.row("b_Fdy", "Downward case: Fy", res_("F", "Fy_s", "qmy", "qry"), "N", "", fmt="0.0")
     s.row("b_Mfs", "Restoring moment of non-ballast DL about right toe", "=b_Wmh*(g_xpr-g_xQ)+b_Wfr*(g_xpr-g_AC/2)", "N.mm", "", fmt="#,##0")
     s.row("b_Mot", "Overturning moment, uplift case (factored 1.5) about right toe", "=ll_fac*(b_Fuy*(g_xpr-g_xQ)+b_Fux*g_yQ)", "N.mm", "vertical uplift lever + horizontal x height", fmt="#,##0")
     s.section("REQUIRED block weight (each criterion solved for Wb; largest governs)")
@@ -597,12 +649,12 @@ def sh_anchor(bk):
 def sh_deflection(bk):
     s = Sh(bk, "Deflection", tab="F4B084")
     s.banner("12  DEFLECTION  -  IS 800:2007 cl 5.6.1, Table 6 (service loads DL + WL, unfactored)",
-             "Limit L/180 (brittle glass cladding) on the inclined rail; base overhangs limited to 2 x overhang / 180 (cantilever, assumed).")
+             "Limit L/180 (brittle glass cladding) on the inclined rail; base overhangs limited to 2 x overhang / 180 (cantilever, assumed). R1: module UDL included.")
     s.std_header()
     s.row("d_EI", "EI (in-plane, free sideways)", "=Es*g_Ieff", "N.mm2", "I_eff from Section", fmt="0.000E+00")
     s.row("d_a1", "Load 1 distance to nearest support", "=MIN(g_s1,g_BC-g_s1)", "mm", "", fmt="0.00"); s.row("d_a2", "Load 2 distance to nearest support", "=MIN(g_s2,g_BC-g_s2)", "mm", "", fmt="0.00")
     for cid, col in (("S1", "J"), ("S2", "K")):
-        s.row(f"d_inc_{cid}", f"Inclined member mid-span deflection, {cid}", f"=ABS({CB(bk,'Fn',col)}*(d_a1*(3*g_BC^2-4*d_a1^2)+d_a2*(3*g_BC^2-4*d_a2^2))/(48*d_EI))", "mm", "P a (3L^2-4a^2)/(48 EI) per load", fmt="0.0000")
+        s.row(f"d_inc_{cid}", f"Inclined member mid-span deflection, {cid}", f"=ABS({CB(bk,'Fn',col)}*(d_a1*(3*g_BC^2-4*d_a1^2)+d_a2*(3*g_BC^2-4*d_a2^2))/(48*d_EI)+{CB(bk,'qn',col)}*5*g_BC^4/(384*d_EI))", "mm", "points: P a (3L^2-4a^2)/(48EI); UDL: 5 q L^4/(384EI) over full span (conservative)", fmt="0.0000")
         s.row(f"d_A_{cid}", f"Base tip deflection at A, {cid}", f"=ABS({CB(bk,'dA',col)})", "mm", "Analysis step 3", fmt="0.0000")
         s.row(f"d_C_{cid}", f"Base tip deflection at C, {cid}", f"=ABS({CB(bk,'dC',col)})", "mm", "", fmt="0.0000")
     ck(s, "dk_inc", "Inclined member (limit L/180)", "=MAX(d_inc_S1,d_inc_S2)", "=g_BC/defl_div", "Table 6 purlins/rails, brittle cladding", unit="mm", fmt="0.0000")
@@ -679,15 +731,15 @@ def sh_staad_map(bk):
     s.banner("13  STAAD MODEL MAP  -  nodes, members, loads, and Excel-vs-STAAD comparison", "Model file: staad/CDSCO_45kW_frame.std.  Paste STAAD results into the yellow cells: differences are computed automatically (tolerance 1 %).")
     s.std_header(); s.section("Nodes (m).  y measured from roof surface.  STAAD: UNIT METER KN for JOINT COORDINATES")
     nodes = [("A", "0", "g_yA"), ("J1", "g_J1", "g_yA"), ("J2", "g_J2", "g_yA"), ("J3", "g_J3", "g_yA"), ("J4", "g_J4", "g_yA"), ("C", "g_AC", "g_yA"),
-             ("B", "0", "g_yB"), ("S1", "g_S1x", "g_S1y"), ("M", "(g_S1x+g_S2x)/2", "(g_S1y+g_S2y)/2"), ("S2", "g_S2x", "g_S2y")]
+             ("B", "0", "g_yB"), ("S1", "g_S1x", "g_S1y"), ("M", "g_Mx", "g_My"), ("S2", "g_S2x", "g_S2y"), ("Pa", "g_Pax", "g_Pay"), ("Pb", "g_Pbx", "g_Pby")]
     for i, (n, x, y) in enumerate(nodes, 1):
         s.row(f"sn_{n}x", f"Node {i} = {n}   X", f"=({x})/1000", "m", "", fmt="0.00000"); s.row(f"sn_{n}y", f"            {n}   Y", f"=({y})/1000", "m", "", fmt="0.00000")
     s.section("Members, properties, releases, supports (as in the .std file)")
-    for t in ["Base: A-J1, J1-J2, J2-J3, J3-J4, J4-C   beam, PRISMATIC AX=sec_A IZ=I_eff IY=I_eff (constant EI)",
-              "Vertical: A-B   MEMBER TRUSS (axial only: pinned single-bolt joints)",
-              "Inclined: B-S1, S1-M, M-S2, S2-C   beam; S2-C: END release MZ at C (pin)",
+    for t in ["Base: members 1-5 = A-J1, J1-J2, J2-J3, J3-J4, J4-C   beam, PRISMATIC AX=sec_A IZ=I_eff IY=I_eff (constant EI)",
+              "Vertical: member 6 = A-B   MEMBER TRUSS (axial only: pinned single-bolt joints)",
+              "Rafter: members 7-12 = B-Pa, Pa-S1, S1-M, M-S2, S2-Pb, Pb-C; member 12: END release MZ at C (pin). Pa-Pb = module contact zone",
               "Supports: J1 = FX FY FZ MX MY fixed (MZ free);  J2, J3, J4 = FY FZ MX MY fixed",
-              "Load cases: 1 DL, 2 WL uplift, 3 WL down, 4 EQ +X (joint loads at S1, S2, A, C; UDL on base).  Combos 11-18 = C1-C6, S1, S2",
+              "Load cases: 1 DL, 2 WL uplift, 3 WL down, 4 EQ +X. R1: module weight = UNI GY on members 8-11 (UDL over contact zone); rafter self-weight UNI on 7-12; base UDL on 1-5. Combos 11-18 = C1-C6, S1, S2",
               "STAAD printed in NEWTON/MMS: reaction FY is UP-positive (same sign as Excel R); axial: STAAD prints +ve = compression, so compare ABS."]:
         s.ws.cell(s.r, 2, t).font = Font(size=9); s.r += 1
     s.section("COMPARISON  Excel (closed form)  vs  STAAD  (paste STAAD values in yellow; units N / mm)")
@@ -695,7 +747,8 @@ def sh_staad_map(bk):
     items = [("Reaction FY at J1, C1", CB(bk, "R1", "D")), ("Reaction FY at J2, C1", CB(bk, "R2", "D")), ("Reaction FY at J3, C1", CB(bk, "R3", "D")), ("Reaction FY at J4, C1", CB(bk, "R4", "D")),
              ("Reaction FY at J1, C2", CB(bk, "R1", "E")), ("Reaction FY at J2, C2", CB(bk, "R2", "E")), ("Reaction FY at J3, C2", CB(bk, "R3", "E")), ("Reaction FY at J4, C2", CB(bk, "R4", "E")),
              ("Reaction FX at J1, C2", CB(bk, "RH1", "E")), ("Axial force member A-B, C1 (abs)", f"ABS({CB(bk,'NAB','D')})"), ("Axial force member A-B, C2 (abs)", f"ABS({CB(bk,'NAB','E')})"),
-             ("Vertical displacement node A, S2 (abs, mm)", f"ABS({CB(bk,'dA','K')})"), ("Vertical displacement node C, S2 (abs, mm)", f"ABS({CB(bk,'dC','K')})")]
+             ("Vertical displacement node A, S2 (abs, mm)", f"ABS({CB(bk,'dA','K')})"), ("Vertical displacement node C, S2 (abs, mm)", f"ABS({CB(bk,'dC','K')})"),
+             ("Rafter moment at node M, C1 (abs, N.mm)", f"ABS({CB(bk,'MincM','D')})"), ("Rafter moment at node M, C2 (abs, N.mm)", f"ABS({CB(bk,'MincM','E')})")]
     cmp0 = s.r
     for i, (lab, ref) in enumerate(items, 1):
         r = s.r; ws = s.ws
@@ -705,7 +758,7 @@ def sh_staad_map(bk):
         absf = "ABS(E{r})" if "abs" in lab else "E{r}"; d = "ABS(D{r})" if "abs" in lab else "D{r}"
         ws.cell(r, 6, f'=IF(ISNUMBER(E{r}),IF(ABS(D{r})<1,ABS({absf.format(r=r)}-{d.format(r=r)}),({absf.format(r=r)}-{d.format(r=r)})/ABS({d.format(r=r)})*100),"")').number_format = "0.000"
         ws.cell(r, 7, f'=IF(ISNUMBER(F{r}),IF(ABS(F{r})<=1,"PASS","FAIL"),"")')
-        ws.cell(r, 8, "Reactions / Node Displacements tables" if "Reaction" in lab or "displ" in lab else "Beam End Forces, member 5 (A-B)").font = Font(size=8, italic=True)
+        ws.cell(r, 8, "Reactions / Node Displacements tables" if "Reaction" in lab or "displ" in lab else ("Beam End Forces, member 9 (S1-M), end M, Mz" if "moment" in lab else "Beam End Forces, member 6 (A-B)")).font = Font(size=8, italic=True)
         s.r += 1
     s.finish(); return s
 
@@ -730,6 +783,8 @@ REGISTER = [
   "REJECTED search snippet (Cxx 1.24 cm, Iuu 10.2, Ivv 2.66): Iuu+Ivv must equal Ixx+Iyy = 21.9 cm4"),
  ("Concrete 24 kN/m3, steel 78.5 kN/m3", "IS 875-1 Table 1", "Recalled", ""),
  ("Bolt stress areas M8 36.6, M10 58, M12 84.3, M16 157 mm2; 8.8: fub 800, fyb 640", "ISO 898-1 / IS 1367", "Recalled", "SS A2-70 (700/450) is an ASSUMPTION - BOM gives no class"),
+ ("Module dead load = UDL w = Wm/(2 W) on each rafter over the contact length W", "Client comment R1 (no purlins); statics: 2 rafters, symmetric overhangs", "Design requirement - load-conserving derivation (check row l_udl_chk = 0)", "Contact length = module width (module parallel to rafter) is an inference"),
+ ("Module wind: bolt points (wind_mode 0) vs UDL (wind_mode 1)", "Load path via 4 M8 bolts; bounding alternative provided", "Design choice, both results reported", "wind_mode 1 raises rafter UR from 0.12 to 0.41"),
  ("Primary sources NOT opened", "law.resource.org, iitk.ac.in, docs.bentley.com, easy-calc.com, eng-tips.com", "Blocked by environment egress policy", "Cross-check every clause number against licensed code copies before issue"),
 ]
 
@@ -769,6 +824,7 @@ NOTES = [
  ("A6", "Members E250 (fy 250, fu 410). Holes at bolt gauge 27.5 from heel; frame bolt line 27.5 above block top; eccentricities between bolt line and member centroid neglected."),
  ("A7", "Single bolt per lap joint = moment-free; angle loaded through one leg (cl 7.5.1.2, single bolt, hinged). No LTB reduction (spans <= 550 mm)."),
  ("A8", "Seismic: Zone II, I = 1.0, Sa/g = 2.5, Ah per assumed component formula (Rp = 2.5). Seismic sliding is sensitive to Rp - see Register."),
+ ("A10", "R1 load path: the module rests directly on the two rafters (no purlins). Module dead load is a UDL over the contact length (= module width 1134 mm) of each rafter, w = Wm/(2 W) = module weight per area x tributary width (L/2 = 1139.5 mm). The 439.5 mm module overhang beyond each rafter is carried by the module. Rafter self-weight is a UDL (stubs spread). Module WIND is transferred through the 4 M8 bolts (wind_mode 0); wind_mode 1 applies it as a UDL as well (bounding case) - both satisfy all checks."),
  ("A9", "J-bolt: plain-bar bond (tau_bd 1.2, M20) + standard hook 16 phi; practical minimum embedment 100 mm; concrete cone breakout not checked (no IS provision)."),
  ("NOT INCLUDED", None),
  ("N1", "Roof slab / beam capacity under ballast (average load on Summary) - building structural engineer to confirm."),
@@ -809,12 +865,12 @@ def sh_index(bk):
     for c in range(1, 4): ws.cell(1, c).fill = PatternFill("solid", fgColor=NAVY)
     info = [("Client / EPC", "M/s Sai Babuji Projects Pvt Ltd"), ("Design & Engg", "M/s JSP Solar Energy"), ("Drawing", "AL-001 R0 (10.09.2026, For Information)"),
             ("Structure", "ISA 50x50x5 frame, 10.115 deg tilt, ballast blocks + J-bolts, 82 tables"), ("Codes", "IS 875 (Pt 1,3), IS 800:2007 LSD, IS 456:2000 (anchorage), IS 1893 (Pt 1):2016"),
-            ("Revision", "R0 - draft for review (see Register / Notes for unverified items)")]
+            ("Revision", "R1 - module dead load as UDL on rafters per client comment (see sheet Revision; R0 superseded)")]
     for i, (a, b) in enumerate(info):
         ws.cell(3 + i, 2, a).font = Font(bold=True); ws.cell(3 + i, 3, b)
     r = 10
     ws.cell(r, 2, "Sheet").font = Font(bold=True, color=NAVY); ws.cell(r, 3, "Content (calculation flows top to bottom)").font = Font(bold=True, color=NAVY); r += 1
-    for nm, d in [("Summary", "All checks, utilisation, PASS/FAIL, key results"), ("Inputs", "All inputs (yellow) + code tables - CHANGE ONLY HERE"), ("Section", "ISA 50x50x5 properties, unsymmetric-bending modulus"),
+    for nm, d in [("Summary", "All checks, utilisation, PASS/FAIL, key results"), ("Revision", "R1: client comment, response, R0 -> R1 comparison"), ("Inputs", "All inputs (yellow) + code tables - CHANGE ONLY HERE"), ("Section", "ISA 50x50x5 properties, unsymmetric-bending modulus"),
                   ("Geometry", "Bolt-centre frame, positions, constants"), ("Wind", "IS 875-3: Vz, pz, pd, Cp, forces"), ("Loads", "Dead and seismic loads"), ("Analysis", "Closed-form frame statics per load case (= STAAD model)"),
                   ("Combos", "IS 800 Table 4 combinations and envelopes"), ("Members", "IS 800 member checks"), ("Connections", "Bolt checks per BOM + edge distances"), ("Ballast", "Uplift / sliding / overturning, required block size"),
                   ("Anchorage", "J-bolt M16 and M10: bolt steel, bond + hook, required length"), ("Deflection", "Serviceability"), ("STAAD_Map", "Node/member map and Excel vs STAAD comparison"),
@@ -830,12 +886,60 @@ def sh_index(bk):
     ws.cell(r, 3, f'="Maximum utilisation "&TEXT(MAX(Summary!G{f0}:G{f1}),"0.000")&"   |   failed checks: "&COUNTIF(Summary!H{f0}:H{f1},"FAIL")&"   |   overall: "&Summary!G{f1+5}').font = Font(bold=True)
 
 
+def sh_revision(bk):
+    import json
+    R0 = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "R0_results.json")))
+    ws = bk.wb.create_sheet("Revision"); ws.sheet_properties.tabColor = "00B050"; ws.sheet_view.showGridLines = False
+    for i, w in enumerate((5, 58, 30, 24, 12, 52), 1): ws.column_dimensions[CL(i)].width = w
+    ws.cell(1, 1, "REVISION R1  -  module dead load applied as UDL on the rafters (client comment)").font = Font(bold=True, size=14, color="FFFFFF")
+    for c in range(1, 7): ws.cell(1, c).fill = PatternFill("solid", fgColor=NAVY)
+    r = 3
+    def block(title, lines):
+        nonlocal r
+        for c in range(1, 7): ws.cell(r, c).fill = PatternFill("solid", fgColor=LBLUE)
+        ws.cell(r, 2, title).font = Font(bold=True, color=NAVY); r += 1
+        for t in lines:
+            x = ws.cell(r, 2, t); x.alignment = Alignment(wrap_text=True, vertical="top"); ws.merge_cells(start_row=r, start_column=2, end_row=r, end_column=6)
+            ws.row_dimensions[r].height = 15 * (1 + len(t)//140); r += 1
+        r += 1
+    block("Client comment", ["Since no purlins are provided in the proposed MMS arrangement and the PV modules are directly supported by the rafters, the module self-weight shall not be considered as concentrated/point loads at the joints. Revise the STAAD model by applying the module dead load as an appropriate UDL on the supporting rafters based on the actual module dimensions, support arrangement and tributary length. Revise the structural analysis/design and load calculations accordingly."])
+    block("Response", ["1. Module dead load is now a UDL on each rafter over the module contact length: w = (Wm / (L x W)) x (L/2) = Wm / (2 W). Module 2279 x 1134 mm, 29.1 kg -> 0.1105 kN/m2; tributary width per rafter = 1139.5 mm (2 rafters at 1400 c/c, 439.5 mm overhang each side carried by the module); contact length along the rafter = 1134 mm (centred on the 4 module bolts, inside the rafter's physical length). w = 0.1259 kN/m (see sheet Loads, rows l_pm .. l_udl_chk).",
+                       "2. Rafter self-weight is also a UDL (previously lumped at the bolts). Seismic mass of module and rafter follows the same UDL.",
+                       "3. STAAD: two extra nodes (Pa, Pb) mark the contact zone; UNI GY loads on members 8-11 (module) and 7-12 (rafter). Statics, member checks, connection, deflection and the module-bolt demand rows were revised; analysis rows now carry the UDL zones with an exact zero-shear peak moment.",
+                       "4. Module WIND: transferred to the rafter through the 4 M8 module bolts (point loads at the bolts, wind_mode 0 - unchanged from R0). The bounding alternative with wind also applied as a UDL (wind_mode 1) is available at one input cell and reported in the report; both satisfy every check.",
+                       "5. Ballast, J-bolt and base-member results are unchanged because the resultant and its line of action are unchanged: only the rafter itself is affected."])
+    for i, h in enumerate(["", "Quantity", "R0 (point loads at module bolts)", "R1 (UDL, live from this workbook)", "R1 / R0", "Comment"], 1):
+        c = ws.cell(r, i, h); c.font = Font(bold=True, color="FFFFFF", size=9); c.fill = PatternFill("solid", fgColor="44546A"); c.alignment = Alignment(wrap_text=True, horizontal="center")
+    r += 1
+    rows = [("Module dead load on rafter (N/mm)", "2 x Wm/4 point loads", "=l_udl_m", None, "0.00000", "UDL over 1134 mm"),
+            ("Rafter max |M|, strength combinations (N.m)", R0["env"]["inc_M"]/1e3, "=m_iM/1000", "r", "0.00", "governs rafter bending; combo C1"),
+            ("Rafter N+M utilisation (tension) cl 9.3.1", R0["member_ur"]["Inclined  N+M (T)  cl 9.3.1"], "=mk_iT_ur", "r", "0.000", "PASS"),
+            ("Rafter N+M utilisation (compression)", R0["member_ur"]["Inclined  N+M (C)  cl 9.3.1"], "=mk_iC_ur", "r", "0.000", "PASS"),
+            ("Rafter shear utilisation", R0["member_ur"]["Inclined  shear cl 8.4"], "=mk_iV_ur", "r", "0.000", ""),
+            ("Rafter deflection, service (mm)", max(v["inc"] for v in R0["defl"].values()), "=MAX(d_inc_S1,d_inc_S2)", "r", "0.000", "limit L/180 = 6.48 mm"),
+            ("M8 module-bolt utilisation", R0["bolt_ur"]["M8 module (SS A2-70)"], "=ck_M_ur", "r", "0.0000", "bolt load path unchanged"),
+            ("Max J-bolt tension, factored (N)", R0["anchor"]["M16"]["T"], "=a_T", "r", "#,##0.0", ""),
+            ("Reaction J1, combination C2 (N)", R0["C2"]["R1"], "=" + CB(bk, "R1", "E"), "r", "#,##0.0", ""),
+            ("Reaction J4, combination C2 (N)", R0["C2"]["R4"], "=" + CB(bk, "R4", "E"), "r", "#,##0.0", ""),
+            ("Required block length, 300x250 section (mm)", R0["L_req"], "=b_L_req", "r", "0.0", "sliding governs - unchanged"),
+            ("Sliding utilisation, provided 650 mm", R0["bal_ur"]["slide"], "=bk_sl_ur", "r", "0.0000", ""),
+            ("Overturning utilisation", R0["bal_ur"]["overt"], "=bk_ot_ur", "r", "0.0000", "")]
+    for lab, v0, f1, rr, fmt, cm in rows:
+        ws.cell(r, 2, lab); a = ws.cell(r, 3, v0); a.number_format = fmt; a.font = Font(color="7F7F7F"); b = ws.cell(r, 4, f1); b.number_format = fmt; b.font = Font(bold=True)
+        if rr: ws.cell(r, 5, f"=D{r}/C{r}").number_format = "0.00"
+        ws.cell(r, 6, cm).font = Font(size=9, italic=True)
+        for cc in range(2, 6): ws.cell(r, cc).border = BORDER
+        r += 1
+    r += 1; ws.cell(r, 2, "R0 values are static (from the issued R0 calculation, git tag R0); R1 values are live formulas.").font = Font(italic=True, size=9)
+
+
 def build(out="../excel/CDSCO_45kW_Ballast_MMS_Design_Calc.xlsx"):
     bk = Book()
     sh_inputs(bk); sh_section(bk); sh_geometry(bk); sh_wind(bk); sh_loads(bk)
     sh_analysis(bk); sh_combos(bk)
     sh_members(bk); sh_connections(bk); sh_ballast(bk); sh_anchor(bk); sh_deflection(bk)
     sh_staad_map(bk); sh_register(bk); sh_notes(bk)
+    sh_revision(bk); bk.wb.move_sheet("Revision", offset=-(len(bk.wb.sheetnames) - 1))
     sh_summary(bk); bk.wb.move_sheet("Summary", offset=-(len(bk.wb.sheetnames) - 1))
     sh_index(bk)
     bk.wb.properties.title = "CDSCO 45kWp Ballast MMS - Design Calculation"; bk.wb.properties.creator = "JSP Solar Energy (draft)"

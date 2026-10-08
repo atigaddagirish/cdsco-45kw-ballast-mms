@@ -39,8 +39,17 @@ add("sec_Zg", val("sec_Zg"), mc["Zg"]); add("sec_Zn", val("sec_Zn"), mc["Zn"]); 
 an = wb["Analysis"]; ar = bk.reg["Analysis"]
 for j, lc in enumerate(BX.LCS):
     res = o["res"][lc]
-    for k in ("VB", "Cx", "Cy", "NAB", "Ninc1", "Ninc2", "Ninc3", "Minc1", "Minc2", "Vinc1", "Vinc3", "M1", "M2", "M3", "M4", "Mm1", "Mm2", "Mm3", "R1", "R2", "R3", "R4", "RH1", "dA", "dC", "V1p", "V3m", "NbA", "NbC"):
+    for k in ("VB", "Cx", "Cy", "NAB", "qnm", "qnr", "N_0", "N_a", "N_1m", "N_1p", "N_2m", "N_2p", "N_b", "N_L", "V_0", "V_a", "V_1m", "V_1p", "V_2m", "V_2p", "V_b", "V_L",
+              "Minc1", "Minc2", "MincM", "M1", "M2", "M3", "M4", "Mm1", "Mm2", "Mm3", "R1", "R2", "R3", "R4", "RH1", "dA", "dC", "V1p", "V3m", "NbA", "NbC", "Fnb", "Ftb"):
         add(f"Analysis {lc} {k}", an.cell(ar[k], 4 + j).value, res[{'NbA': 'Nbase_A', 'NbC': 'Nbase_C'}.get(k, k)])
+# R1 load derivation + per-combination peak rafter moment (Combos sheet)
+for k, pk in (("l_pm", L["pm"]), ("l_trib", L["trib"]), ("l_udl_m", L["wm"]), ("l_udl_r", L["wr"]), ("g_sa", g["sa"]), ("g_sb", g["sb"]), ("g_Lm", g["Lm"]), ("g_BCdwg", g["BCdwg"]), ("g_mod_ovh", g["mod_ovh"])):
+    add(k, val(k), pk)
+add("l_udl_chk", val("l_udl_chk"), 0.0)
+cb = wb["Combos"]; cr = bk.reg["Combos"]
+for j, (nm, _, kind) in enumerate(E.COMBOS):
+    c_ = o["cmb"][nm]
+    for k in ("Mstar", "sstar"): add(f"Combos {nm[:2]} {k}", cb.cell(cr[k], 4 + j).value, c_[k])
 # member / connection / ballast / anchorage / deflection
 add("m_Td", val("m_Td"), mc["Td"]); add("m_Tdn", val("m_Tdn"), mc["Tdn"]); add("m_beta", val("m_beta"), mc["beta"])
 for s_, k in (("v", "vert"), ("i", "inc"), ("b", "base")): add(f"m_Pd_{s_}", val(f"m_Pd_{s_}"), mc[f"Pd_{k}"])
@@ -75,6 +84,6 @@ print("compared %d cells; worst relative difference %.2e" % (len(cmp), worst))
 print("MISMATCHES:", bad if bad else "NONE")
 # equilibrium self-checks in the workbook itself
 for j, lc in enumerate(BX.LCS):
-    print(lc, "eqV=%.2e  eqN=%.2e" % (an.cell(ar["eqV"], 4 + j).value, an.cell(ar["eqN"], 4 + j).value))
+    print(lc, "eqV=%.2e  eqN=%.2e  eqM=%.2e" % (an.cell(ar["eqV"], 4 + j).value, an.cell(ar["eqN"], 4 + j).value, an.cell(ar["eqM"], 4 + j).value))
 print("Summary: overall =", [c.value for row in wb["Summary"].iter_rows() for c in row if c.value in ("PASS", "REVIEW") and c.column == 7][-1:],
       "| fails:", sum(1 for row in wb["Summary"].iter_rows() for c in row if c.value == "FAIL"))

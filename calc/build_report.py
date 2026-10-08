@@ -6,6 +6,7 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.oxml.ns import qn
 from docx.oxml import OxmlElement
+import json
 import engine as E
 import sensitivity
 from build_excel import REGISTER, NOTES
@@ -118,12 +119,32 @@ def build(out, backend=None):
     R.title("DESIGN CALCULATION REPORT")
     R.P("45 kWp Ballast-Type Rooftop Module Mounting Structure - CDSCO, Hyderabad", bold=True, size=13)
     R.T(["Item", "Detail"], [["Client / EPC", "M/s Sai Babuji Projects Pvt Ltd"], ["Design & Engg", "M/s JSP Solar Energy"], ["Drawing", "AL-001 R0 (10.09.2026, For Information); Hardware BOM (82 tables)"],
-                             ["Document", "DC-CDSCO-45kWp-R0  -  DRAFT FOR REVIEW  -  %s" % datetime.date(2026, 9, 30).strftime("%d %b %Y")],
+                             ["Document", "DC-CDSCO-45kWp-R1  -  REVISION R1 (supersedes R0)  -  DRAFT FOR REVIEW  -  %s" % datetime.date(2026, 10, 8).strftime("%d %b %Y")],
                              ["Deliverables", "Excel calculation workbook (formula-linked) | STAAD.Pro input file | this report"],
                              ["Codes", "IS 875 (Pt 1, Pt 3) | IS 800:2007 (LSD) | IS 456:2000 | IS 1893 (Pt 1):2016 | IS 808 | IS 2062"]], widths=[3.5, 13.5])
-    R.P("Status of this draft: every numeric result is reproduced by three independent routes (closed-form statics in Excel, a separate matrix-stiffness solver, and a round-trip of the generated STAAD input). "
+    R.P("Status of this draft (R1): every numeric result is reproduced by three independent routes (closed-form statics in Excel, a separate matrix-stiffness solver, and a round-trip of the generated STAAD input). "
         "STAAD.Pro itself has not been run (not available in the authoring environment); the file is ready to run and the workbook has a comparison table for the STAAD output. "
         "Several design-basis inputs are assumptions (Section 3.3) and two are decisive (Section 11).", italic=True, size=9, color=(0x7F, 0x00, 0x00))
+
+    R0 = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "R0_results.json")))
+    R.H("0  Revision R1 - response to client comment")
+    R.P("Client comment: since no purlins are provided in the proposed MMS arrangement and the PV modules are directly supported by the rafters, the module self-weight shall not be considered as concentrated/point loads at the joints. "
+        "Revise the STAAD model by applying the module dead load as an appropriate UDL on the supporting rafters based on the actual module dimensions, support arrangement and tributary length; revise the analysis, design and load calculations accordingly.", italic=True)
+    R.B([("Accepted and implemented. ", "The module dead load is now a UDL on each rafter over the module contact length: w = (Wm / (L x W)) x (L / 2) = Wm / (2 W) = %.4f N/mm (= %.4f kN/m), acting over %.0f mm of the rafter (%.1f to %.1f mm from bolt B). Derivation in Section 4.2 and Fig 2." % (L["wm"], L["wm"], g["Lm"], g["sa"], g["sb"])),
+         ("Rafter self-weight ", "is also a UDL (%.4f N/mm over B-C) instead of being lumped at the bolts; seismic mass of module and rafter follows the same distribution." % L["wr"]),
+         ("STAAD model: ", "two additional nodes (Pa, Pb) delimit the contact zone; module weight is applied as UNI GY on members 8-11 (rafter members 7-12 carry the rafter self-weight). No joint loads remain for dead load except the vertical member and base stubs."),
+         ("Module wind ", "is a different load path: wind suction/pressure is transferred through the four M8 module bolts, so it remains point loads at the bolts (wind_mode 0, as R0). As a bounding case the wind is also applied as a UDL over the contact length (wind_mode 1, alternate STAAD file); both satisfy every check (Section 11)."),
+         ("Effect: ", "only the rafter changes. Peak rafter moment %.1f N.m (R0 %.1f), rafter utilisation %.2f (R0 %.2f). Reactions, J-bolt forces, base member, bolts and the ballast result are unchanged (resultant and line of action of the module load are the same)." % (env["inc_M"]/1e3, R0["env"]["inc_M"]/1e3, o["chk_member"]["Inclined  N+M (T)  cl 9.3.1"][0], R0["member_ur"]["Inclined  N+M (T)  cl 9.3.1"]))])
+    c2 = cmb["C2 0.9DL+1.5WL(up)"]
+    R.T(["Quantity", "R0 (point loads at bolts)", "R1 (UDL)", "Change"],
+        [["Module dead load on a rafter", "2 x %.1f N at the module bolts" % (L["Wm"]/4), "%.4f N/mm over %.0f mm" % (L["wm"], g["Lm"]), "UDL"],
+         ["Rafter max |M|, strength combos (N.m)", "%.1f" % (R0["env"]["inc_M"]/1e3), "%.1f" % (env["inc_M"]/1e3), "x %.2f" % (env["inc_M"]/R0["env"]["inc_M"])],
+         ["Rafter N+M utilisation (tension / compression)", "%.3f / %.3f" % (R0["member_ur"]["Inclined  N+M (T)  cl 9.3.1"], R0["member_ur"]["Inclined  N+M (C)  cl 9.3.1"]), "%.3f / %.3f" % (o["chk_member"]["Inclined  N+M (T)  cl 9.3.1"][0], o["chk_member"]["Inclined  N+M (C)  cl 9.3.1"][0]), "PASS"],
+         ["Rafter deflection, service (mm; limit %.2f)" % o["defl_lim"]["inc"], "%.3f" % max(v["inc"] for v in R0["defl"].values()), "%.3f" % max(v["inc"] for v in o["defl"].values()), "PASS"],
+         ["Max J-bolt tension, factored (N)", "%.1f" % R0["anchor"]["M16"]["T"], "%.1f" % o["anchor"]["M16"]["T"], "unchanged"],
+         ["Reactions J1..J4, combination C2 (N)", "%s" % ", ".join("%.1f" % R0["C2"][k] for k in ("R1", "R2", "R3", "R4")), "%s" % ", ".join("%.1f" % c2[k] for k in ("R1", "R2", "R3", "R4")), "<= 0.1 N"],
+         ["Required block length, 300 x 250 section (mm)", "%.1f" % R0["L_req"], "%.1f" % bal["L_req"], "unchanged"],
+         ["Sliding utilisation at 650 mm", "%.3f" % R0["bal_ur"]["slide"], "%.3f" % (bal["slide"][0]/bal["slide"][1]), "unchanged"]], widths=[6.2, 4.3, 4.3, 2.4])
 
     R.H("1  Summary of results")
     tk = lambda d_, c_: "%.3f" % (d_/c_)
@@ -134,8 +155,8 @@ def build(out, backend=None):
             ["J-bolt anchorage M16 (BOM) / M10 (alternate)", "UR bond %.2f / %.2f ; required length %d / %d mm" % (o["anchor"]["M16"]["T"]/o["anchor"]["M16"]["Tanch"], o["anchor"]["M10"]["T"]/o["anchor"]["M10"]["Tanch"], o["anchor"]["M16"]["Ltot"], o["anchor"]["M10"]["Ltot"]), "PASS"],
             ["Deflection (L/180)", "UR %.2f" % max(max(v["inc"] for v in o["defl"].values())/o["defl_lim"]["inc"], max(v["dA"] for v in o["defl"].values())/o["defl_lim"]["tip_A"]), "PASS"],
             ["Drawing: Ø18 J-bolt hole edge distance (IS 800 cl 10.2.4.2)", "22.5 mm provided < 27 mm required", "FAIL"]]
-    R.T(["Check group", "Result", "Status"], rows, widths=[8.3, 7.3, 1.6], status_col=2)
-    R.B([("Ballast governs the design. ", "Structural members and bolts are lightly stressed (UR <= 0.21); the ballast blocks are sized by SLIDING under wind uplift (friction mu = 0.4). The drawing does not give the block length; %d mm is required for 300 x 250 blocks." % bal["L_req_round"]),
+    R.T(["Check group", "Result", "Status"], rows, widths=[7.6, 7.4, 2.2], status_col=2)
+    R.B([("Ballast governs the design. ", "Structural members and bolts are lightly stressed (UR <= %.2f); the ballast blocks are sized by SLIDING under wind uplift (friction mu = 0.4). The drawing does not give the block length; %d mm is required for 300 x 250 blocks." % (max(o["chk_member"][k][0]/o["chk_member"][k][1] if o["chk_member"][k][1] != 1.0 else o["chk_member"][k][0] for k in o["chk_member"]), bal["L_req_round"])),
          ("M10 J-bolts are adequate. ", "M10 satisfies every IS 800 / IS 456 check (steel UR 0.04, bond + hook UR 0.15) and, unlike the drawn Ø18 holes, M10 in a Ø12 hole meets the edge-distance rule (Section 12)."),
          ("Decisive assumptions: ", "design life factor k1 (0.91 vs 1.0), terrain category, roof friction, and the seismic component factor Rp (Section 11). All are single input cells in the workbook.")])
 
@@ -175,32 +196,44 @@ def build(out, backend=None):
                                           ["Per module bolt (4 per module)", "F/4", "%.1f N uplift / %.1f N down" % (w["N_up"]/4, w["N_dn"]/4)]], widths=[5.0, 7.6, 4.6])
     R.P("Limitations: IS 875-3 has no rooftop-PV or roof edge/corner provision; uniform net pressure is applied and shielding by adjacent rows is ignored (conservative for interior rows). "
         "Hyderabad Vb = 44 m/s is confirmed by two secondary sources; the code text itself could not be opened (see Appendix A).", italic=True, size=8.5)
-    R.H("4.2  Dead and seismic load", 2)
-    R.T(["Item", "Value"], [["Module", "%.1f kg = %.1f N (datasheet search, single source)" % (p["mod_kg"], L["Wm"])], ["Steel", "%.4f N/mm = %.2f kg/m; base %.1f N, vertical %.1f N, inclined %.1f N" % (L["ws"], L["ws"]*1000/p["gacc"], L["Wbase"], L["Wv"], L["Winc"])],
+    R.H("4.2  Dead load: module as UDL on the rafters (R1), and seismic", 2)
+    R.P("Support arrangement: no purlins - each module (L x W = %.0f x %.0f mm) rests directly on two rafters %.0f mm apart, centred, so %.1f mm of module overhangs each rafter and is carried by the module itself. "
+        "Each rafter therefore takes half the module: tributary width = L/2 = %.1f mm. The module lies parallel to the rafter and bears on it over its full width W = %.0f mm (contact zone %.1f ... %.1f mm from bolt B, inside the rafter's physical length). "
+        "The four M8 bolts (%.0f x %.0f mm) only fix the module." % (p["mod_L"], p["mod_W"], p["frame_sp"], g["mod_ovh"], L["trib"], g["Lm"], g["sa"], g["sb"], p["frame_sp"], p["slot_cc_dwg"]))
+    R.T(["Step", "Expression", "Value"], [["Module weight", "Wm = %.1f kg x %.2f" % (p["mod_kg"], p["gacc"]), "%.1f N" % L["Wm"]], ["Weight per unit area", "Wm / (L x W)", "%.2f N/m2 = %.4f kN/m2" % (L["pm"]*1e6, L["pm"]*1e3)],
+                                       ["Tributary width per rafter", "L / 2", "%.1f mm" % L["trib"]], ["UDL on one rafter", "w = (Wm/(L W)) x (L/2) = Wm / (2 W)", "%.5f N/mm  =  %.4f kN/m" % (L["wm"], L["wm"])],
+                                       ["Resultant per rafter", "w x W", "%.2f N = Wm/2  (2 rafters: %.2f N = Wm)" % (L["wm"]*g["Lm"], 2*L["wm"]*g["Lm"])],
+                                       ["Rafter self-weight UDL", "ws x 1222.01 / %.2f" % g["BC"], "%.5f N/mm" % L["wr"]], ["Seismic (module + rafter)", "Ah x w (horizontal UDL)", "Ah = %.3f" % L["Ah"]]], widths=[4.4, 6.6, 6.2])
+    R.IMG("fig2_udl_derivation.png", 16.0)
+    R.P("Other dead loads:", bold=True)
+    R.T(["Item", "Value"], [["Module", "%.1f kg = %.1f N (datasheet search, single source); applied as UDL, see above" % (p["mod_kg"], L["Wm"])], ["Steel", "%.4f N/mm = %.2f kg/m; base %.1f N, vertical %.1f N, inclined %.1f N" % (L["ws"], L["ws"]*1000/p["gacc"], L["Wbase"], L["Wv"], L["Winc"])],
                              ["Ballast block", "300 x 250 x %d mm x 24 kN/m3 = %.1f N (%.1f kg)" % (p["block_L"], bal["Wb1"], bal["Wb1"]/p["gacc"])],
                              ["Seismic", "Ah = (Z/2) I (Sa/g)(1+z/h)/Rp = (0.10/2)(1.0)(2.5)(2.0)/2.5 = %.3f  (horizontal only; Zone II)" % L["Ah"]]], widths=[3.5, 13.7])
-    R.IMG("fig2_loads.png")
+    R.IMG("fig3_loads.png")
     R.H("4.3  Load combinations - IS 800:2007 Table 4", 2)
     R.T(["No.", "Combination", "Use"], [[n.split()[0], n.split(" ", 1)[1], "strength" if k == "U" else "serviceability (unfactored)"] for n, f, k in E.COMBOS], widths=[1.5, 8, 7.7])
 
     R.H("5  Analysis")
-    R.P("The frame is analysed as a plane model (STAAD file staad/CDSCO_45kW_Ballast_Frame.std): single-bolt joints are moment-free (vertical member is a truss element; inclined member pinned at C); "
-        "the base member is continuous over four rigid J-bolt supports (J1 restrained in X and Y, J2-J4 in Y). Load points are the module bolts. The inclined member and vertical member are statically determinate; "
-        "the base beam is solved with the three-moment equation in the workbook and with a full stiffness solution in STAAD.")
+    R.P("The frame is analysed as a plane model (STAAD file staad/CDSCO_45kW_Ballast_Frame.std, 12 nodes, 12 members): single-bolt joints are moment-free (vertical member is a truss element; rafter pinned at C); "
+        "the base member is continuous over four rigid J-bolt supports (J1 restrained in X and Y, J2-J4 in Y). R1 loads: module dead load and rafter self-weight are UDLs on the rafter (zone Pa-Pb, members 8-11 / 7-12); wind acts through the four module bolts (joint loads at S1, S2). "
+        "The rafter and vertical member are statically determinate; its internal forces use closed-form shear/moment with the UDL zones and the exact zero-shear section. The base beam is solved with the three-moment equation in the workbook and with a full stiffness solution in STAAD.")
     R.T(["Result (per frame)", "C1 1.5DL+1.5WL(dn)", "C2 0.9DL+1.5WL(up)"],
         [["J1 reaction FY (N)", "%.1f" % C1["R1"], "%.1f" % C2["R1"]], ["J2 reaction FY (N)", "%.1f" % C1["R2"], "%.1f" % C2["R2"]], ["J3 reaction FY (N)", "%.1f" % C1["R3"], "%.1f" % C2["R3"]],
          ["J4 reaction FY (N)", "%.1f" % C1["R4"], "%.1f" % C2["R4"]], ["J1 horizontal reaction FX (N)", "%.1f" % C1["RH1"], "%.1f" % C2["RH1"]], ["Vertical member axial (tension +, N)", "%.1f" % C1["NAB"], "%.1f" % C2["NAB"]],
-         ["Inclined moment at S1 / S2 (N.m)", "%.1f / %.1f" % (C1["Minc1"]/1e3, C1["Minc2"]/1e3), "%.1f / %.1f" % (C2["Minc1"]/1e3, C2["Minc2"]/1e3)],
+         ["Rafter |M| at bolt 1 / bolt 2 / peak (N.m)", "%.1f / %.1f / %.1f" % (abs(C1["Minc1"])/1e3, abs(C1["Minc2"])/1e3, abs(C1["Mstar"])/1e3), "%.1f / %.1f / %.1f" % (abs(C2["Minc1"])/1e3, abs(C2["Minc2"])/1e3, abs(C2["Mstar"])/1e3)],
          ["Base moment at J1 / J2 / J3 / J4 (N.m)", "%.1f / %.1f / %.1f / %.1f" % tuple(C1[k]/1e3 for k in ("M1", "M2", "M3", "M4")), "%.1f / %.1f / %.1f / %.1f" % tuple(C2[k]/1e3 for k in ("M1", "M2", "M3", "M4"))]], widths=[6.6, 5.3, 5.3])
-    R.P("Note the J-bolt reactions: continuity of the base angle over each bolt pair turns the overhang load into a couple, so J1 carries about four times the average uplift share (Fig 3).")
-    R.IMG("fig3_results_C2.png", 16.0)
+    R.P("Note the J-bolt reactions: continuity of the base angle over each bolt pair turns the overhang load into a couple, so J1 carries about four times the average uplift share (Fig 4).")
+    R.IMG("fig4_results_C2.png", 16.0)
+    R.IMG("fig5_rafter_moment.png", 16.0)
     R.H("5.1  Cross-checks performed", 2)
-    R.B(["Closed-form statics (Excel) vs independent matrix-stiffness solver: agree to 1.7e-11 for all four load cases (reactions, moments, axial forces, tip deflections); equilibrium identities hold to machine precision.",
-         "Excel recalculated in LibreOffice: 218 key cells compared with the Python engine, worst difference 1.2e-14; no formula errors in 1271 formulas.",
-         "STAAD input text re-parsed and solved: agrees with the workbook to 5.5e-8 for all 8 combinations (print-precision level).",
+    R.B(["Closed-form statics (Excel, with UDL zones) vs independent matrix-stiffness solver (rafter split at the contact ends): agree to 2e-10 for all four load cases in both wind modes (reactions, moments, axial/shear at 8 rafter sections, tip deflections); equilibrium identities hold to machine precision.",
+         "Peak rafter moment (closed form, zero-shear section) vs a dense scan of the solver's moment diagram, all 8 combinations: agree within 2e-5.",
+         "Excel recalculated in LibreOffice: 308 key cells compared with the Python engine, worst difference 1.7e-13; no formula errors. Live-linkage test: 10 inputs changed at once (incl. module width, wind_mode) -> outputs agree to 3e-15.",
+         "STAAD input text re-parsed (12 nodes, UNI loads) and solved: agrees with the workbook to 5e-8 for all 8 combinations, both STAAD files.",
+         "To confirm in STAAD: sum of FY reactions for load case 1 = %.1f N (confirms UNI GY is per unit member length)." % (L["ws"]*g["AC"] + L["wr"]*g["BC"] + L["wm"]*g["Lm"] + L["Wv"] + L["stubA"] + L["stubC"]),
          "Not done: an actual STAAD.Pro run. Expected reactions are in staad/expected_results.csv and the workbook sheet STAAD_Map compares them automatically."])
 
-    R.H("6  Member design - IS 800:2007")
+    R.H("6  Member design - IS 800:2007 (rafter = inclined member B-C)")
     U = lambda k: (o["chk_member"][k][0]/o["chk_member"][k][1]) if o["chk_member"][k][1] != 1.0 else o["chk_member"][k][0]
     rows = [["Vertical - tension (cl 6.2, 6.3)", "%.0f N" % env["vert_T"], "Td = %.0f N" % mc["Td"], "%.3f" % U("Vertical member  N (T)")],
             ["Vertical - compression (cl 7.1.2, 7.5.1.2, Table 12)", "%.0f N" % env["vert_C"], "Pd = %.0f N (lambda_e %.2f)" % (mc["Pd_vert"], mc["lam_vert"]), "%.3f" % U("Vertical member  N (C)")],
@@ -232,7 +265,7 @@ def build(out, backend=None):
     for lab, k in (("Uplift", "uplift"), ("Sliding - wind uplift", "slide"), ("Overturning - wind uplift", "overt"), ("Per-block uplift", "block_up"), ("Sliding - downward wind", "slide_dn"), ("Overturning - downward wind", "overt_dn"), ("Sliding - seismic", "slide_eq"), ("Overturning - seismic", "overt_eq")):
         dd, cc = bal[k]; rows.append([lab, "%.0f" % dd, "%.0f" % cc, "%.3f" % (dd/cc), stat(dd/cc)])
     R.T(["Check (provided 300x250x%d blocks)" % p["block_L"], "Demand (N or N.mm)", "Capacity", "UR", "Status"], rows, widths=[6.4, 3.4, 3.4, 1.8, 1.8], status_col=4)
-    R.IMG("fig4_ballast.png", 15.5)
+    R.IMG("fig6_ballast.png", 15.5)
     R.P("Roof load: %d blocks x %.0f kg + array = %.2f kN/m2 average over the table footprint. The building structural engineer must confirm the slab/beam capacity (not part of this scope). "
         "Seismic sliding utilisation (%.2f) does not depend on block weight; it rises above 1.0 if the component factor Rp is taken as 1.0 (Section 11)." % (4, bal["Wb1"]/p["gacc"], bal["roof_load_kN_m2"], bal["slide_eq"][0]/bal["slide_eq"][1]))
 
@@ -264,6 +297,14 @@ def build(out, backend=None):
     R.H("11  Sensitivity to the decisive assumptions")
     R.T(["Scenario", "pd (kN/m2)", "Required block length (mm)", "Governs", "Max UR at 650 mm", "Seismic sliding UR"],
         [[lab, "%.3f" % pd_, "%d (%.0f)" % (lrr, lr), gov, "%.2f" % mur, "%.2f" % eq] for lab, pd_, lr, lrr, gov, mur, eq in sensitivity.run()], widths=[5.6, 1.8, 3.0, 2.0, 2.4, 2.4])
+    pw = E.P0(); pw["wind_mode"] = 1; ow = E.design(pw)
+    f_ = lambda oo, k: oo["chk_member"][k][0]
+    R.P("Module wind as UDL (wind_mode 1) instead of through the four bolts - bounding case for the rafter:", bold=True)
+    R.T(["Item", "Wind at 4 bolts (R1 base)", "Wind as UDL (alt)"],
+        [["Rafter max |M| (N.m)", "%.1f" % (env["inc_M"]/1e3), "%.1f" % (ow["env"]["inc_M"]/1e3)], ["Rafter N+M utilisation (tension)", "%.3f" % f_(o, "Inclined  N+M (T)  cl 9.3.1"), "%.3f" % f_(ow, "Inclined  N+M (T)  cl 9.3.1")],
+         ["Rafter N+M utilisation (compression)", "%.3f" % f_(o, "Inclined  N+M (C)  cl 9.3.1"), "%.3f" % f_(ow, "Inclined  N+M (C)  cl 9.3.1")],
+         ["Rafter deflection (mm; limit %.2f)" % o["defl_lim"]["inc"], "%.3f" % max(v["inc"] for v in o["defl"].values()), "%.3f" % max(v["inc"] for v in ow["defl"].values())],
+         ["Reactions / ballast / J-bolts", "as reported", "identical (resultant unchanged): L_req %.1f / %.1f mm" % (bal["L_req"], ow["bal"]["L_req"])]], widths=[7.0, 5.1, 5.1])
     R.P("Reading: the required block length moves between 550 mm (Category 3) and 950 mm (combined worst case); sliding governs in every case, so a higher roof friction coefficient (tested value) is the most economical lever. "
         "Seismic sliding exceeds 1.0 at Rp = 1.0 for any block size: the IS 1893 component provisions must be confirmed before issue.")
 

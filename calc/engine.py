@@ -25,9 +25,10 @@ def geometry(p):
     g = {}
     g["AC"] = p["base_len"] - p["base_end_A"] - p["base_end_C"]
     g["AB"] = p["vert_len"] - 2*p["vert_end"]
-    g["BC"] = p["incl_len"] - p["incl_end_B"] - p["incl_end_C"]
+    g["BCdwg"] = p["incl_len"] - p["incl_end_B"] - p["incl_end_C"]       # as drawn (2 decimals)
+    g["BC"] = hypot(g["AC"], g["AB"])                                    # working length: triangle closes exactly
     g["tilt"] = math.atan2(g["AB"], g["AC"]); g["tilt_deg"] = math.degrees(g["tilt"])
-    g["closure"] = hypot(g["AC"], g["AB"]) - g["BC"]
+    g["closure"] = g["BC"] - g["BCdwg"]
     g["cos"], g["sin"] = cos(g["tilt"]), sin(g["tilt"])
     g["J1"] = p["J_off"] - p["base_end_A"]; g["J2"] = g["J1"] + p["J_pair"]
     g["J3"] = g["J2"] + p["J_mid"]; g["J4"] = g["J3"] + p["J_pair"]
@@ -38,6 +39,14 @@ def geometry(p):
     d = (g["cos"], -g["sin"])
     g["S1"] = (0 + g["s1"]*d[0], g["yB"] + g["s1"]*d[1]); g["S2"] = (0 + g["s2"]*d[0], g["yB"] + g["s2"]*d[1])
     g["Ieff"] = (SEC["Ixx"]*SEC["Iyy"] - SEC["Ixy"]**2)/SEC["Iyy"]      # in-plane, free sideways
+    # module contact zone on the rafter (module sits directly on the rafter, no purlin)
+    g["sc"] = (g["s1"] + g["s2"])/2; g["Lm"] = p["mod_W"]
+    g["sa"], g["sb"] = g["sc"] - g["Lm"]/2, g["sc"] + g["Lm"]/2
+    g["sM"] = g["sc"]                                                     # node M (mid of slots)
+    g["Pa"] = (g["sa"]*g["cos"], g["yB"] - g["sa"]*g["sin"]); g["Pb"] = (g["sb"]*g["cos"], g["yB"] - g["sb"]*g["sin"])
+    g["M"] = (g["sM"]*g["cos"], g["yB"] - g["sM"]*g["sin"])
+    g["mod_ovh"] = (p["mod_L"] - p["frame_sp"])/2                         # module overhang beyond each rafter
+    g["zone_ok"] = (g["sa"] >= -p["incl_end_B"]) and (g["sb"] <= g["BC"] + p["incl_end_C"])
     return g
 
 
@@ -64,46 +73,76 @@ def wind(p, g):
 
 
 def loads(p, g, w):
+    """Per-frame load cases. The module is carried DIRECTLY by the two rafters (no purlins): module dead load (and, in
+    wind_mode 1, module wind) is a UDL over the module contact length of each rafter, not point loads at joints."""
     L = {}
     A = SEC["A"]; ws = A*1e-6*p["gam_s"]                               # N/mm
     L["ws"] = ws; L["Wm"] = p["mod_kg"]*p["gacc"]
     L["Wbase"], L["Wv"], L["Winc"] = ws*p["base_len"], ws*p["vert_len"], ws*p["incl_len"]
     L["stubA"], L["stubC"] = ws*p["base_end_A"], ws*p["base_end_C"]
     L["Ah"] = (p["Zf"]/2)*p["I_imp"]*p["SaG"]*(1 + p["zh"])/p["Rp"]
-    s, c = g["sin"], g["cos"]
-    slot_dl = L["Wm"]/4 + L["Winc"]/2
-    Fn_u, Fn_d = w["N_up"]/4, w["N_dn"]/4
+    # --- tributary UDL on one rafter (N per mm of rafter length, vertical) ---------------------------------------------
+    L["pm"] = L["Wm"]/(p["mod_L"]*p["mod_W"])                          # module weight per unit area, N/mm2
+    L["trib"] = p["mod_L"]/2.0                                         # 2 rafters, symmetric overhangs -> each takes half
+    L["wm"] = L["pm"]*L["trib"]                                        # = Wm/(2 mod_W)
+    L["wr"] = L["Winc"]/g["BC"]                                        # rafter self-weight spread over bolt c/c
+    s, c = g["sin"], g["cos"]; mode = int(p["wind_mode"]); Z = (0.0, 0.0)
+    Fn_u, Fn_d = w["N_up"]/4, w["N_dn"]/4                              # per module bolt
+    q_u, q_d = (w["N_up"]/2)/p["mod_W"], (w["N_dn"]/2)/p["mod_W"]     # per mm of rafter if wind taken as UDL
+    wl = lambda Fn, q, sg: (dict(slots=[(sg*Fn*s, sg*Fn*c)]*2, qm=Z) if mode == 0 else dict(slots=[Z, Z], qm=(sg*q*s, sg*q*c)))
+    base = dict(qr=Z, FxA=0.0, FxC=0.0, dAy=0.0, dCy=0.0, wb=0.0)
     L["lc"] = {
-        "DL":  dict(slots=[(0, -slot_dl)]*2, FxA=0, FxC=0, dAy=L["Wv"] + L["stubA"], dCy=L["stubC"], wb=ws),
-        "WLU": dict(slots=[(Fn_u*s, Fn_u*c)]*2, FxA=0, FxC=0, dAy=0, dCy=0, wb=0),
-        "WLD": dict(slots=[(-Fn_d*s, -Fn_d*c)]*2, FxA=0, FxC=0, dAy=0, dCy=0, wb=0),
-        "EQX": dict(slots=[(L["Ah"]*slot_dl, 0)]*2, FxA=L["Ah"]*(L["Wv"] + L["stubA"] + 0.5*ws*g["AC"]),
-                    FxC=L["Ah"]*(L["stubC"] + 0.5*ws*g["AC"]), dAy=0, dCy=0, wb=0),
+        "DL":  dict(base, slots=[Z, Z], qm=(0.0, -L["wm"]), qr=(0.0, -L["wr"]), dAy=L["Wv"] + L["stubA"], dCy=L["stubC"], wb=ws,
+                    bolt=(-(L["Wm"]/4)*c, (L["Wm"]/4)*s)),
+        "WLU": dict(base, **wl(Fn_u, q_u, +1), bolt=(Fn_u, 0.0)),
+        "WLD": dict(base, **wl(Fn_d, q_d, -1), bolt=(-Fn_d, 0.0)),
+        "EQX": dict(base, slots=[Z, Z], qm=(L["Ah"]*L["wm"], 0.0), qr=(L["Ah"]*L["wr"], 0.0),
+                    FxA=L["Ah"]*(L["Wv"] + L["stubA"] + 0.5*ws*g["AC"]), FxC=L["Ah"]*(L["stubC"] + 0.5*ws*g["AC"]),
+                    bolt=(L["Ah"]*(L["Wm"]/4)*s, L["Ah"]*(L["Wm"]/4)*c)),
     }
     return L
+
+
+def resultant(g, lc):
+    """total force (Fx, Fy) applied to the rafter by a load case"""
+    Fx = sum(f[0] for f in lc["slots"]) + lc["qm"][0]*g["Lm"] + lc["qr"][0]*g["BC"]
+    Fy = sum(f[1] for f in lc["slots"]) + lc["qm"][1]*g["Lm"] + lc["qr"][1]*g["BC"]
+    return Fx, Fy
+
+
+def clen(sx, a, b): return max(0.0, min(sx, b) - a)
 
 
 def closed_form(p, g, lc):
     """Closed-form statics of one frame for one load case. Returns dict (N, mm; tension +; R up +)."""
     xB, yB, xC, yC = 0.0, g["yB"], g["AC"], g["yA"]
-    s, c = g["sin"], g["cos"]
+    s, c, LB = g["sin"], g["cos"], g["BC"]; sa, sb, Lm, s1, s2 = g["sa"], g["sb"], g["Lm"], g["s1"], g["s2"]
     r = {}
-    sl = [(g["S1"], lc["slots"][0]), (g["S2"], lc["slots"][1])]
-    msum = sum((pt[0] - xC)*F[1] - (pt[1] - yC)*F[0] for pt, F in sl)
+    (qmx, qmy), (qrx, qry) = lc["qm"], lc["qr"]
+    F1, F2 = lc["slots"]
+    pt = lambda sp: (sp*c, yB - sp*s)                                  # point on the rafter axis
+    items = [(g["S1"], F1), (g["S2"], F2), (pt(g["sc"]), (qmx*Lm, qmy*Lm)), (pt(LB/2), (qrx*LB, qry*LB))]
+    msum = sum((q[0] - xC)*F[1] - (q[1] - yC)*F[0] for q, F in items)
     r["VB"] = -msum/(xB - xC)
-    r["Cx"] = -sum(F[0] for _, F in sl)
-    r["Cy"] = -(sum(F[1] for _, F in sl) + r["VB"])
+    r["Cx"] = -sum(F[0] for _, F in items)
+    r["Cy"] = -(sum(F[1] for _, F in items) + r["VB"])
     r["NAB"] = -r["VB"]
-    F1, F2 = sl[0][1], sl[1][1]
-    Fd = lambda F: F[0]*c - F[1]*s                      # component along d=(c,-s)
-    Fn = lambda F: F[0]*s + F[1]*c                      # component along n=(s,c)
-    r["Fn1"], r["Fn2"] = Fn(F1), Fn(F2); r["Ft1"], r["Ft2"] = Fd(F1), Fd(F2)
-    r["Ninc1"] = r["VB"]*s
-    r["Ninc2"] = r["Ninc1"] - Fd(F1)
-    r["Ninc3"] = r["Ninc2"] - Fd(F2)
-    r["Minc1"] = -r["VB"]*c*g["s1"]
-    r["Minc2"] = -(r["VB"]*c*g["s2"] + r["Fn1"]*(g["s2"] - g["s1"]))
-    r["Vinc1"] = -r["VB"]*c; r["Vinc2"] = r["Vinc1"] - r["Fn1"]; r["Vinc3"] = r["Vinc2"] - r["Fn2"]
+    Fd = lambda F: F[0]*c - F[1]*s                                     # along d = (c, -s)
+    Fn = lambda F: F[0]*s + F[1]*c                                     # along n = (s, c)
+    r["Fn1"], r["Fn2"], r["Ft1"], r["Ft2"] = Fn(F1), Fn(F2), Fd(F1), Fd(F2)
+    r["qnm"], r["qtm"], r["qnr"], r["qtr"] = Fn((qmx, qmy)), Fd((qmx, qmy)), Fn((qrx, qry)), Fd((qrx, qry))
+    r["qn"] = r["qnm"] + r["qnr"]
+    VBc = r["VB"]*c
+    secs = [("0", 0.0, 0, 0), ("a", sa, 0, 0), ("1m", s1, 0, 0), ("1p", s1, 1, 0), ("2m", s2, 1, 0), ("2p", s2, 1, 1), ("b", sb, 1, 1), ("L", LB, 1, 1)]
+    for nm, sx, i1, i2 in secs:
+        cm, cr = clen(sx, sa, sb), clen(sx, 0.0, LB)
+        r["N_" + nm] = r["VB"]*s - (r["Ft1"]*i1 + r["Ft2"]*i2) - r["qtm"]*cm - r["qtr"]*cr
+        r["V_" + nm] = -(VBc + r["Fn1"]*i1 + r["Fn2"]*i2 + r["qnm"]*cm + r["qnr"]*cr)
+    def Mat(sx):
+        gm = clen(sx, sa, sb)*(sx - (sa + min(sx, sb))/2.0) if sx > sa else 0.0
+        gr = clen(sx, 0.0, LB)*(sx - min(sx, LB)/2.0)
+        return -(VBc*sx + r["Fn1"]*max(0.0, sx - s1) + r["Fn2"]*max(0.0, sx - s2) + r["qnm"]*gm + r["qnr"]*gr)
+    r["Minc1"], r["Minc2"], r["MincM"], r["MincL"] = Mat(s1), Mat(s2), Mat(g["sM"]), Mat(LB)
     # base beam
     PA = lc["dAy"] - r["NAB"]; PC = lc["dCy"] + r["Cy"]; w_ = lc["wb"]
     FxA_t = lc["FxA"]; FxC_t = lc["FxC"] - r["Cx"]
@@ -123,63 +162,44 @@ def closed_form(p, g, lc):
              Mm1=M1 + V1p*L1/2 - w_*(L1/2)**2/2, Mm2=M2 + V2p*L2/2 - w_*(L2/2)**2/2, Mm3=M3 + V3p*L3/2 - w_*(L3/2)**2/2,
              V1m=V1m, V1p=V1p, V2m=V2m, V2p=V2p, V3m=V3m, V3p=V3p, V4m=V4m, V4p=V4p,
              sumR=R1 + R2 + R3 + R4, sumP=PA + PC + w_*g["AC"])
-    # tip deflections (down +) from slope at supports
     EI = p["Es"]*g["Ieff"]
     th1 = (M1*L1/3 + M2*L1/6 + w_*L1**3/24)/EI        # slope dy/dx (y down +), EI y'' = -M
     th4 = -(M3*L3/6 + M4*L3/3 + w_*L3**3/24)/EI
     r["dA"] = -th1*a1 + (PA*a1**3/3 + w_*a1**4/8)/EI
     r["dC"] = th4*c2 + (PC*c2**3/3 + w_*c2**4/8)/EI
+    r["Fnb"], r["Ftb"] = lc["bolt"]
     return r
 
 
 def build_model(p, g, lc, EI=None):
-    """Same frame for the matrix solver (independent check)."""
+    """Same frame for the matrix solver (independent check). Rafter is split at the module contact ends Pa, Pb."""
     from solver2d import Frame2D
     EI = EI or p["Es"]*g["Ieff"]; EA = p["Es"]*SEC["A"]
     f = Frame2D(); yA = g["yA"]
     base = [("A", 0.0), ("J1", g["J1"]), ("J2", g["J2"]), ("J3", g["J3"]), ("J4", g["J4"]), ("C", g["AC"])]
     for n, x in base: f.node(n, x, yA)
-    f.node("B", 0.0, g["yB"]); f.node("S1", *g["S1"]); f.node("S2", *g["S2"])
-    mx = (g["S1"][0] + g["S2"][0])/2; my = (g["S1"][1] + g["S2"][1])/2; f.node("M", mx, my)
+    f.node("B", 0.0, g["yB"])
+    inc = [("B", 0.0), ("Pa", g["sa"]), ("S1", g["s1"]), ("M", g["sM"]), ("S2", g["s2"]), ("Pb", g["sb"]), ("C", g["BC"])]
+    for n, sp in inc[1:-1]: f.node(n, *{"Pa": g["Pa"], "S1": g["S1"], "M": g["M"], "S2": g["S2"], "Pb": g["Pb"]}[n])
     names = []
     for (n1, _), (n2, _) in zip(base, base[1:]):
         nm = n1 + "-" + n2; f.beam(nm, n1, n2, EA, EI); names.append(nm)
     f.truss("AB", "A", "B", EA)
-    f.beam("B-S1", "B", "S1", EA, EI); f.beam("S1-M", "S1", "M", EA, EI)
-    f.beam("M-S2", "M", "S2", EA, EI); f.beam("S2-C", "S2", "C", EA, EI, rel2=True)
+    udl = {}
+    for (n1, s_a), (n2, s_b) in zip(inc, inc[1:]):
+        nm = n1 + "-" + n2; f.beam(nm, n1, n2, EA, EI, rel2=(n2 == "C"))
+        qx, qy = lc["qr"]
+        if s_a >= g["sa"] - 1e-9 and s_b <= g["sb"] + 1e-9: qx, qy = qx + lc["qm"][0], qy + lc["qm"][1]
+        if qx or qy: udl[nm] = f.local_udl(nm, qx, qy)
     f.support("J1", True, True); [f.support(n, False, True) for n in ("J2", "J3", "J4")]
     nodal = {"S1": (lc["slots"][0][0], lc["slots"][0][1], 0), "S2": (lc["slots"][1][0], lc["slots"][1][1], 0),
              "A": (lc["FxA"], -lc["dAy"], 0), "C": (lc["FxC"], -lc["dCy"], 0)}
-    udl = {n: -lc["wb"] for n in names}
+    for n in names: udl[n] = -lc["wb"]
     return f, nodal, udl
 
 
 if __name__ == "__main__":
-    p = P0(); g = geometry(p); w = wind(p, g); L = loads(p, g, w)
-    print("tilt %.4f deg closure %.4f mm | z %.2f k2 %.4f Vz %.2f pz %.4f pd %.4f kN/m2 | Cp dn %.4f up %.4f" % (
-        g["tilt_deg"], g["closure"], w["z"], w["k2"], w["Vz"], w["pz"], w["pd"], w["cp_dn"], w["cp_up"]))
-    print("N_up/module %.1f N  N_dn %.1f N | Wm %.1f N | Ah %.3f | Ieff %.0f" % (w["N_up"], w["N_dn"], L["Wm"], L["Ah"], g["Ieff"]))
-    worst = 0
-    for name, lc in L["lc"].items():
-        cf = closed_form(p, g, lc); f, nodal, udl = build_model(p, g, lc); m = f.solve(nodal, udl)
-        chk = {
-            "VB(AB axial)": (cf["NAB"], m["elems"]["AB"]["N"]),
-            "R1": (cf["R1"], m["R"]["J1"][1]), "R2": (cf["R2"], m["R"]["J2"][1]),
-            "R3": (cf["R3"], m["R"]["J3"][1]), "R4": (cf["R4"], m["R"]["J4"][1]),
-            "RH1": (cf["RH1"], m["R"]["J1"][0]),
-            "M2 (J2)": (cf["M2"], m["elems"]["J1-J2"]["M2"]), "M3 (J3)": (cf["M3"], m["elems"]["J2-J3"]["M2"]),
-            "M1 (J1)": (cf["M1"], m["elems"]["A-J1"]["M2"]),
-            "dA": (cf["dA"], -m["u"]["A"][1]), "dC": (cf["dC"], -m["u"]["C"][1]),
-            "Ninc3": (cf["Ninc3"], m["elems"]["S2-C"]["N"]),
-        }
-        bad = []
-        for k, (a, b) in chk.items():
-            err = abs(a - b); worst = max(worst, err/max(1.0, abs(a)))
-            if err > 1e-6*max(1.0, abs(a)) and err > 1e-6: bad.append((k, a, b))
-        print("%-4s R=%s sumR-sumP=%.2e  Ninc3 == Cx*c-Cy*s ? %.4f vs %.4f  %s" % (
-            name, [round(cf[k], 3) for k in ("R1", "R2", "R3", "R4")], cf["sumR"] - cf["sumP"],
-            cf["Ninc3"], cf["Cx"]*g["cos"] - cf["Cy"]*g["sin"], "OK" if not bad else "MISMATCH " + str(bad)))
-    print("worst relative diff closed-form vs matrix: %.2e" % worst)
+    import verify_udl; verify_udl.main()
 
 
 # =====================================================================================================
@@ -260,15 +280,21 @@ def design(p=None, block_L=None):
     g = geometry(p); w = wind(p, g); L = loads(p, g, w)
     res = {lc: closed_form(p, g, d) for lc, d in L["lc"].items()}
     cmb = {n: combine(res, f) for n, f, _ in COMBOS}
+    for n, c_ in cmb.items():                                  # exact peak moment of the rafter, region S1-S2 (all UDL zones active)
+        den = c_["qnm"] + c_["qnr"]
+        sst = (-(c_["VB"]*g["cos"] + c_["Fn1"]) + c_["qnm"]*g["sa"])/den if abs(den) > 1e-12 else g["sM"]
+        sst = min(max(sst, g["s1"]), g["s2"])
+        c_["sstar"] = sst
+        c_["Mstar"] = -(c_["VB"]*g["cos"]*sst + c_["Fn1"]*(sst - g["s1"]) + c_["qnm"]*(sst - g["sa"])**2/2 + c_["qnr"]*sst**2/2)
     U = [n for n, _, k in COMBOS if k == "U"]; S = [n for n, _, k in COMBOS if k == "S"]
     mc = member_caps(p, g); out = dict(p=p, g=g, w=w, L=L, res=res, cmb=cmb, mc=mc)
     # ---- member force envelopes (strength combos) ---------------------------------------------------
     env = {}
     def E_(keys, fn): return fn([cmb[n][k] for n in U for k in keys])
     env["vert_T"] = max(0, E_(["NAB"], max)); env["vert_C"] = max(0, -E_(["NAB"], min))
-    env["inc_T"] = max(0, E_(["Ninc1", "Ninc2", "Ninc3"], max)); env["inc_C"] = max(0, -E_(["Ninc1", "Ninc2", "Ninc3"], min))
-    env["inc_M"] = max(abs(v) for v in [cmb[n][k] for n in U for k in ("Minc1", "Minc2")])
-    env["inc_V"] = max(abs(v) for v in [cmb[n][k] for n in U for k in ("Vinc1", "Vinc2", "Vinc3")])
+    env["inc_T"] = max(0, E_(["N_0", "N_a", "N_1m", "N_1p", "N_2m", "N_2p", "N_b", "N_L"], max)); env["inc_C"] = max(0, -E_(["N_0", "N_a", "N_1m", "N_1p", "N_2m", "N_2p", "N_b", "N_L"], min))
+    env["inc_M"] = max(abs(v) for v in [cmb[n][k] for n in U for k in ("Minc1", "Minc2", "Mstar")])
+    env["inc_V"] = max(abs(v) for v in [cmb[n][k] for n in U for k in ["V_0", "V_a", "V_1m", "V_1p", "V_2m", "V_2p", "V_b", "V_L"]])
     env["base_T"] = max(0, E_(["Nbase_A", "Nbase_C"], max)); env["base_C"] = max(0, -E_(["Nbase_A", "Nbase_C"], min))
     env["base_Msup"] = max(abs(cmb[n][k]) for n in U for k in ("M1", "M2", "M3", "M4"))
     env["base_Mspan"] = max(abs(cmb[n][k]) for n in U for k in ("Mm1", "Mm2", "Mm3"))
@@ -288,8 +314,8 @@ def design(p=None, block_L=None):
     out["chk_member"] = chk
     # ---- connection (frame) bolts ---------------------------------------------------------------------
     VB = max(abs(cmb[n]["VB"]) for n in U); RC = max(hypot(cmb[n]["Cx"], cmb[n]["Cy"]) for n in U)
-    Fn_t = max(max(cmb[n]["Fn1"], cmb[n]["Fn2"]) for n in U); Fn_t = max(Fn_t, 0)
-    Ft_s = max(max(abs(cmb[n]["Ft1"]), abs(cmb[n]["Ft2"])) for n in U)
+    Fn_t = max(max(cmb[n]["Fnb"], 0.0) for n in U)                 # module-bolt tension per bolt (load path via the 4 M8 bolts)
+    Ft_s = max(abs(cmb[n]["Ftb"]) for n in U)                      # module-bolt shear per bolt (along slope)
     bc = {}
     bc["M10 A base-vertical"] = bolt_caps(p, "M10", p["fub88"], p["fyb88"], p["d0_14"])
     bc["M10 B vertical-inclined"] = bolt_caps(p, "M10", p["fub88"], p["fyb88"], p["d0_14"])
@@ -321,8 +347,7 @@ def design(p=None, block_L=None):
     mx = (g["S1"][0] + g["S2"][0])/2; my = (g["S1"][1] + g["S2"][1])/2
     xQ, yQ = mx + p["e_mod"]*g["sin"], my + p["e_mod"]*g["cos"]
     up = res["WLU"]; dn = res["WLD"]
-    Fu = (sum(s[0] for s in L["lc"]["WLU"]["slots"]), sum(s[1] for s in L["lc"]["WLU"]["slots"]))
-    Fd = (sum(s[0] for s in L["lc"]["WLD"]["slots"]), sum(s[1] for s in L["lc"]["WLD"]["slots"]))
+    Fu = resultant(g, L["lc"]["WLU"]); Fd = resultant(g, L["lc"]["WLD"])
     f = p["ll_fac"]; d9 = p["dl_stab"]; mu = p["mu_f"]
     Wfs = Wmh + Wfr                                                  # non-ballast dead load per frame
     bal = dict(Wb1=Wb1, xb1=xb1, xb2=xb2, xp_r=xp_r, xp_l=xp_l, xQ=xQ, yQ=yQ, Wfs=Wfs, Fu=Fu, Fd=Fd)
@@ -382,6 +407,7 @@ def design(p=None, block_L=None):
         c = cmb[n]; tot = 0.0
         for Fn_i, s_i in ((c["Fn1"], g["s1"]), (c["Fn2"], g["s2"])):
             a = min(s_i, Lb - s_i); tot += Fn_i*a*(3*Lb**2 - 4*a**2)/(48*EI)
+        tot += c["qn"]*5*Lb**4/(384*EI)                              # distributed normal load, taken over full span (conservative; module covers 97 %)
         dfl[n] = dict(inc=abs(tot), dA=abs(c["dA"]), dC=abs(c["dC"]))
     out["defl"] = dfl
     out["defl_lim"] = dict(inc=Lb/p["defl_div"], tip_A=2*g["a1"]/p["defl_div"], tip_C=2*g["c2"]/p["defl_div"])

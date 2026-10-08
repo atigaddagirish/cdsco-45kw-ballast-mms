@@ -1,4 +1,4 @@
-"""Minimal 2D frame direct-stiffness solver (beam + truss elements, end moment releases, UDL).
+"""Minimal 2D frame direct-stiffness solver (beam + truss elements, end moment releases, UDL with axial+transverse parts).
 Independent of the closed-form statics used in the Excel workbook -> used to cross-check it.
 Units: N, mm.  Sign: x right, y up, rotation CCW positive."""
 import numpy as np
@@ -48,8 +48,14 @@ class Frame2D:
             k[r, :] = 0; k[:, r] = 0; f[r] = 0
         return k, f
 
+    def local_udl(self, name, qx, qy):
+        """global distributed load vector (N/mm of member length) -> (axial, transverse) local components"""
+        e = [x for x in self.elems if x["name"] == name][0]
+        x1, y1 = self.nodes[e["n1"]]; x2, y2 = self.nodes[e["n2"]]; L = np.hypot(x2 - x1, y2 - y1); c, s = (x2 - x1)/L, (y2 - y1)/L
+        return (qx*c + qy*s, -qx*s + qy*c)
+
     def solve(self, nodal, udl=None):
-        """nodal: {node:(Fx,Fy,M)} ; udl: {elem_name: q_local_y (N/mm, +y local)} -> results dict"""
+        """nodal: {node:(Fx,Fy,M)} ; udl: {elem_name: q_local_y or (q_axial, q_transverse)} (N/mm) -> results dict"""
         udl = udl or {}; idx = {n: i for i, n in enumerate(self.order)}; N = 3*len(self.order)
         K = np.zeros((N, N)); F = np.zeros(N); store = {}
         for n, (fx, fy, m) in nodal.items():
@@ -57,8 +63,9 @@ class Frame2D:
         for e in self.elems:
             L, T = self._geom(e); k = self._klocal(e, L); f0 = np.zeros(6)
             q = udl.get(e["name"], 0.0)
-            if q and e["kind"] == "beam":
-                f0 = np.array([0, q*L/2, q*L**2/12, 0, q*L/2, -q*L**2/12])
+            qa, qy = (q if isinstance(q, tuple) else (0.0, q))                    # local axial, local transverse (N/mm)
+            if (qa or qy) and e["kind"] == "beam":
+                f0 = np.array([qa*L/2, qy*L/2, qy*L**2/12, qa*L/2, qy*L/2, -qy*L**2/12])
             rel = ([2] if e["rel1"] else []) + ([5] if e["rel2"] else [])
             k, f0 = self._condense(k, f0, rel)
             kg = T.T @ k @ T; fg = T.T @ f0

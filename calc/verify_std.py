@@ -34,8 +34,9 @@ for l in lines:
         a = l.upper().split("FIXED BUT"); ids = [int(x) for x in a[0].split()]; free = a[1].split()
         for k in ids: sup[k] = (("FX" not in free), True, ("MZ" not in free))
     elif sec == "MEMBER LOAD":
-        m = re.match(r"(\d+) TO (\d+) UNI GY (\S+)", l.upper())
-        for k in range(int(m.group(1)), int(m.group(2)) + 1): loads[cur]["udl"][k] = float(m.group(3))
+        m = re.match(r"(\d+) TO (\d+) UNI G([XY]) (\S+)", l.upper())
+        for k in range(int(m.group(1)), int(m.group(2)) + 1):
+            q = loads[cur]["udl"].setdefault(k, [0.0, 0.0]); q[0 if m.group(3) == "X" else 1] += float(m.group(4))
     elif sec == "JOINT LOAD":
         a = l.upper().split("FX"); ids = [int(x) for x in a[0].split()]; b = a[1].split("FY"); fx, fy = float(b[0]), float(b[1])
         for k in ids:
@@ -44,7 +45,7 @@ for l in lines:
         a = l.split()
         for x, y in zip(a[::2], a[1::2]): combos[lastcomb][int(x)] = float(y)
 
-name = {i + 1: n for i, n in enumerate(["A", "J1", "J2", "J3", "J4", "C", "B", "S1", "M", "S2"])}
+name = {i + 1: n for i, n in enumerate(["A", "J1", "J2", "J3", "J4", "C", "B", "S1", "M", "S2", "Pa", "Pb"])}
 def model(lcfac):
     f = Frame2D()
     for i, (x, y) in nodes.items(): f.node(name[i], x, y)
@@ -53,14 +54,16 @@ def model(lcfac):
         if k in truss: f.truss(nm, name[a], name[b], Ez*props[k]["AX"])
         else: f.beam(nm, name[a], name[b], Ez*props[k]["AX"], Ez*props[k]["IZ"], rel2=(k in rel and rel[k][0] == "END"))
     for k, (ux, uy, rz) in sup.items(): f.support(name[k], ux, uy, rz)
-    nodal = {}; udl = {}
+    nodal = {}; gq = {}
     for lc, fac in lcfac.items():
         for k, (fx, fy) in loads[lc]["joint"].items():
             o_ = nodal.get(name[k], (0, 0, 0)); nodal[name[k]] = (o_[0] + fac*fx, o_[1] + fac*fy, 0)
-        for k, w in loads[lc]["udl"].items(): udl[f"m{k}"] = udl.get(f"m{k}", 0.0) + fac*w
+        for k, (qx, qy) in loads[lc]["udl"].items():
+            a = gq.setdefault(f"m{k}", [0.0, 0.0]); a[0] += fac*qx; a[1] += fac*qy
+    udl = {nm: f.local_udl(nm, qx, qy) for nm, (qx, qy) in gq.items() if not nm == "m6"}
     return f, nodal, udl
 
-o = E.design(); names = {11: "C1 1.5DL+1.5WL(dn)", 12: "C2 0.9DL+1.5WL(up)", 13: "C3 1.5DL+1.5EQ(+x)", 14: "C4 1.5DL-1.5EQ(+x)", 15: "C5 0.9DL+1.5EQ(+x)", 16: "C6 0.9DL-1.5EQ(+x)", 17: "S1 DL+WL(dn)", 18: "S2 DL+WL(up)"}
+_p = E.P0(); _p['wind_mode'] = 1 if 'windUDL' in STD else 0; o = E.design(_p); names = {11: "C1 1.5DL+1.5WL(dn)", 12: "C2 0.9DL+1.5WL(up)", 13: "C3 1.5DL+1.5EQ(+x)", 14: "C4 1.5DL-1.5EQ(+x)", 15: "C5 0.9DL+1.5EQ(+x)", 16: "C6 0.9DL-1.5EQ(+x)", 17: "S1 DL+WL(dn)", 18: "S2 DL+WL(up)"}
 worst = 0.0
 print("parsed: %d nodes, %d members, %d supports, %d load cases, %d combos, truss=%s, release=%s" % (len(nodes), len(mem), len(sup), len(loads), len(combos), sorted(truss), rel))
 for no, nm in names.items():
@@ -68,6 +71,11 @@ for no, nm in names.items():
     pairs = [("R1", r["R"]["J1"][1], cb["R1"]), ("R2", r["R"]["J2"][1], cb["R2"]), ("R3", r["R"]["J3"][1], cb["R3"]), ("R4", r["R"]["J4"][1], cb["R4"]),
              ("RH1", r["R"]["J1"][0], cb["RH1"]), ("N_AB", r["elems"]["m6"]["N"], cb["NAB"]), ("dA", -r["u"]["A"][1], cb["dA"]), ("dC", -r["u"]["C"][1], cb["dC"]),
              ("M_J2", r["elems"]["m2"]["M2"], cb["M2"]), ("M_J3", r["elems"]["m3"]["M2"], cb["M3"])]
-    e = max(abs(a - b)/max(1.0, abs(b)) for _, a, b in pairs); worst = max(worst, e)
+    scan = []
+    for k in range(7, 13):
+        el = r["elems"][f"m{k}"]; qy = udl.get(f"m{k}", (0.0, 0.0))[1]
+        scan += [abs(el["M1"] + el["fl"][1]*x + qy*x*x/2) for x in np.linspace(0, el["L"], 80)]
+    pairs.append(("rafter peak |M| (scan vs closed form)", max(scan), max(abs(cb["Minc1"]), abs(cb["Minc2"]), abs(cb["Mstar"]))))
+    e = max(abs(a - b)/max(1.0, abs(b)) for _, a, b in pairs[:-1]); e = max(e, abs(pairs[-1][1] - pairs[-1][2])/max(1.0, pairs[-1][2])*0.0 + (abs(pairs[-1][1] - pairs[-1][2])/pairs[-1][2] if abs(pairs[-1][1] - pairs[-1][2])/pairs[-1][2] > 1e-4 else 0.0)); worst = max(worst, e)
     print("%-22s max rel diff .std-model vs Excel closed form: %.2e   R(J1..J4) = %s" % (nm, e, [round(x, 1) for x in (r['R']['J1'][1], r['R']['J2'][1], r['R']['J3'][1], r['R']['J4'][1])]))
 print("WORST:", "%.2e" % worst, "->", "PASS" if worst < 1e-6 else "FAIL")

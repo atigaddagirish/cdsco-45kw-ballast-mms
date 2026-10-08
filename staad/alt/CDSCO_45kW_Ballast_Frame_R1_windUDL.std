@@ -12,7 +12,7 @@ INPUT WIDTH 79
 * R1: NO PURLINS - module rests on the rafters. Module dead load is a
 * UDL (UNI) on the rafter over the module contact zone Pa-Pb (members
 * 8-11), w = Wm/(2 W) = module weight/area x tributary width L/2.
-* Module wind: through the 4 module bolts (joint loads at S1,S2)
+* Module wind: UDL over contact zone (bounding case)
 * Pinned bolt joints; base beam continuous on 4 J-bolt supports.
 * ONE frame (table = 2 frames); loads per frame. See Excel STAAD_Map.
 UNIT METER KN
@@ -66,11 +66,13 @@ JOINT LOAD
 1 FX 0.000000 FY -10.452178
 6 FX 0.000000 FY -0.942589
 LOAD 2 LOADTYPE None  TITLE WL UP (IS875 T7 CP MIN)
-JOINT LOAD
-8 10 FX 93.412586 FY 523.597806
+MEMBER LOAD
+8 TO 11 UNI GX 0.164748830
+8 TO 11 UNI GY 0.923452921
 LOAD 3 LOADTYPE None  TITLE WL DOWN (IS875 T7 CP MAX)
-JOINT LOAD
-8 10 FX -52.107808 FY -292.075566
+MEMBER LOAD
+8 TO 11 UNI GX -0.091900896
+8 TO 11 UNI GY -0.515124454
 LOAD 4 LOADTYPE None  TITLE EQ +X AH=0.100
 MEMBER LOAD
 7 TO 12 UNI GX 0.003952761
