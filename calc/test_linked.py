@@ -8,7 +8,7 @@ T = "/tmp/claude-0/-home-user-Cluade/cb1ede1f-45e1-5aee-bb0b-19ef0d08b619/scratc
 shutil.rmtree(T, ignore_errors=True); os.makedirs(T)
 XL = "../excel/CDSCO_45kW_Ballast_MMS_Design_Calc.xlsx"
 bk = BX.build(os.path.join(T, "probe.xlsx"))
-scen = {"k1_risk": 1.0, "terrain": 3, "mu_f": 0.5, "block_L": 700.0, "mod_kg": 27.5, "Vb": 39.0, "z_bldg": 16.0, "wind_mode": 1, "mod_W": 1100.0, "frame_sp": 1350.0, "tilt_probe": None}
+scen = {"k1_risk": 1.0, "terrain": 3, "mu_f": 0.5, "block_L": 700.0, "mod_kg": 27.5, "Vb": 39.0, "z_bldg": 16.0, "wind_mode": 0, "mod_W": 1100.0, "frame_sp": 1350.0, "tilt_probe": None}
 scen.pop("tilt_probe")
 wb = load_workbook(XL)
 for k, v in scen.items():

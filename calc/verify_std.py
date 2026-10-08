@@ -63,7 +63,7 @@ def model(lcfac):
     udl = {nm: f.local_udl(nm, qx, qy) for nm, (qx, qy) in gq.items() if not nm == "m6"}
     return f, nodal, udl
 
-_p = E.P0(); _p['wind_mode'] = 1 if 'windUDL' in STD else 0; o = E.design(_p); names = {11: "C1 1.5DL+1.5WL(dn)", 12: "C2 0.9DL+1.5WL(up)", 13: "C3 1.5DL+1.5EQ(+x)", 14: "C4 1.5DL-1.5EQ(+x)", 15: "C5 0.9DL+1.5EQ(+x)", 16: "C6 0.9DL-1.5EQ(+x)", 17: "S1 DL+WL(dn)", 18: "S2 DL+WL(up)"}
+_p = E.P0(); _p['wind_mode'] = 0 if 'windBolts' in STD else 1; o = E.design(_p); names = {11: "C1 1.5DL+1.5WL(dn)", 12: "C2 0.9DL+1.5WL(up)", 13: "C3 1.5DL+1.5EQ(+x)", 14: "C4 1.5DL-1.5EQ(+x)", 15: "C5 0.9DL+1.5EQ(+x)", 16: "C6 0.9DL-1.5EQ(+x)", 17: "S1 DL+WL(dn)", 18: "S2 DL+WL(up)"}
 worst = 0.0
 print("parsed: %d nodes, %d members, %d supports, %d load cases, %d combos, truss=%s, release=%s" % (len(nodes), len(mem), len(sup), len(loads), len(combos), sorted(truss), rel))
 for no, nm in names.items():

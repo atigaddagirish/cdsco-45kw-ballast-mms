@@ -26,7 +26,7 @@ INPUTS = OD([
  ("J_gauge",   (27.5,   "mm", "Gauge of J-bolt hole from heel (horizontal leg)", "Drawing AL-001 sh.2 (27.5/22.5)", "V")),
  ("slot_cc_dwg",(1088.0, "mm", "Module slot c/c as drawn (cross-check)", "Drawing AL-001 sh.2", "V")),
  ("bolt_h",     (27.5,   "mm", "Height of frame bolt line above block top (gauge from heel)", "Standard gauge for 50 leg (assumed)", "I")),
- ("wind_mode", (0, "0/1", "Module wind transfer to rafter: 0 = at the 4 module bolts (point loads); 1 = UDL over module contact length", "Design choice (R1); alt run provided", "I")),
+ ("wind_mode", (1, "0/1", "Module wind on rafter: 1 = UDL over module contact length (design basis, R1); 0 = point loads at the 4 module bolts (alternate)", "Design choice (R1, per instruction); alternate STAAD file provided", "I")),
  ("e_mod",      (25.0,   "mm", "Module mid-plane offset from inclined-member bolt line", "t_leg + t_mod/2 (assumed)", "I")),
  # ---- module ------------------------------------------------------------------------
  ("mod_L",  (2279.0, "mm", "Module length", "550 Wp mono-PERC datasheets (search) ", "I")),

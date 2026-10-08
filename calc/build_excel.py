@@ -275,8 +275,8 @@ def sh_loads(bk):
     s.row("l_udl_m", "Module UDL on one rafter = pm x tributary width", "=l_pm*l_trib", "N/mm", "numerically = kN/m; per mm of rafter length, vertical", "I", fmt="0.00000")
     s.row("l_udl_chk", "Check: UDL x contact length - Wm/2  (must be 0)", "=l_udl_m*g_Lm-l_Wm/2", "N", "load conserved", fmt="0.0000")
     s.row("l_udl_r", "Rafter self-weight UDL = Winc / B-C  (stubs spread)", "=l_Winc/g_BC", "N/mm", "weight conserved", fmt="0.00000")
-    s.row("l_qu", "Wind uplift as UDL over contact length (wind_mode = 1 only)", "=(w_Nup/2)/g_Lm", "N/mm", "normal to module; = N per frame / contact length", fmt="0.00000")
-    s.row("l_qd", "Wind downward as UDL over contact length (wind_mode = 1 only)", "=(w_Ndn/2)/g_Lm", "N/mm", "", fmt="0.00000")
+    s.row("l_qu", "Wind uplift as UDL over contact length (design basis, wind_mode = 1)", "=(w_Nup/2)/g_Lm", "N/mm", "normal to module; = N per frame / contact length", fmt="0.00000")
+    s.row("l_qd", "Wind downward as UDL over contact length (design basis, wind_mode = 1)", "=(w_Ndn/2)/g_Lm", "N/mm", "", fmt="0.00000")
     s.section("Seismic - IS 1893 (Part 1):2016 (horizontal only)")
     s.row("l_Ah", "Ah = (Z/2) I (Sa/g)(1+z/h)/Rp", "=Zf/2*I_imp*SaG*(1+zh)/Rp", "-", "component at roof level; clause text not retrievable offline", "I", fmt="0.0000",
           note="Sensitivity: Rp=1 gives Ah=0.25")
@@ -302,7 +302,7 @@ for nm, sx, i1, i2, lab in _SECS:
 
 AN_ROWS = [
  ("_h", "Applied loads per frame - module bolts, module UDL zone, rafter UDL, direct loads at A and C", None, None, None, None),
- ("Fx_s", "Point load per module bolt, Fx (x right +)", "N", "#,##0.00", ["=0", "=IF(wind_mode=0,w_Fn_u*g_sin,0)", "=IF(wind_mode=0,-w_Fn_d*g_sin,0)", "=0"], "wind_mode 0: wind through the 4 module bolts"),
+ ("Fx_s", "Point load per module bolt, Fx (x right +)", "N", "#,##0.00", ["=0", "=IF(wind_mode=0,w_Fn_u*g_sin,0)", "=IF(wind_mode=0,-w_Fn_d*g_sin,0)", "=0"], "wind_mode 0 (alternate only): wind through the 4 module bolts"),
  ("Fy_s", "Point load per module bolt, Fy (y up +)", "N", "#,##0.00", ["=0", "=IF(wind_mode=0,w_Fn_u*g_cos,0)", "=IF(wind_mode=0,-w_Fn_d*g_cos,0)", "=0"], "R1: module DEAD load is NOT a point load any more"),
  ("qmx", "Module UDL on rafter over contact length, x-component", "N/mm", "0.00000", ["=0", "=IF(wind_mode=1,l_qu*g_sin,0)", "=IF(wind_mode=1,-l_qd*g_sin,0)", "=l_Ah*l_udl_m"], "per mm of rafter length, global x"),
  ("qmy", "Module UDL on rafter over contact length, y-component", "N/mm", "0.00000", ["=-l_udl_m", "=IF(wind_mode=1,l_qu*g_cos,0)", "=IF(wind_mode=1,-l_qd*g_cos,0)", "=0"], "DL: module weight x tributary width / contact length"),
@@ -739,7 +739,7 @@ def sh_staad_map(bk):
               "Vertical: member 6 = A-B   MEMBER TRUSS (axial only: pinned single-bolt joints)",
               "Rafter: members 7-12 = B-Pa, Pa-S1, S1-M, M-S2, S2-Pb, Pb-C; member 12: END release MZ at C (pin). Pa-Pb = module contact zone",
               "Supports: J1 = FX FY FZ MX MY fixed (MZ free);  J2, J3, J4 = FY FZ MX MY fixed",
-              "Load cases: 1 DL, 2 WL uplift, 3 WL down, 4 EQ +X. R1: module weight = UNI GY on members 8-11 (UDL over contact zone); rafter self-weight UNI on 7-12; base UDL on 1-5. Combos 11-18 = C1-C6, S1, S2",
+              "Load cases: 1 DL, 2 WL uplift, 3 WL down, 4 EQ +X. R1: module weight AND module wind = UNI GX/GY on members 8-11 (UDL over contact zone Pa-Pb); rafter self-weight UNI on 7-12; base UDL on 1-5. Combos 11-18 = C1-C6, S1, S2",
               "STAAD printed in NEWTON/MMS: reaction FY is UP-positive (same sign as Excel R); axial: STAAD prints +ve = compression, so compare ABS."]:
         s.ws.cell(s.r, 2, t).font = Font(size=9); s.r += 1
     s.section("COMPARISON  Excel (closed form)  vs  STAAD  (paste STAAD values in yellow; units N / mm)")
@@ -784,7 +784,7 @@ REGISTER = [
  ("Concrete 24 kN/m3, steel 78.5 kN/m3", "IS 875-1 Table 1", "Recalled", ""),
  ("Bolt stress areas M8 36.6, M10 58, M12 84.3, M16 157 mm2; 8.8: fub 800, fyb 640", "ISO 898-1 / IS 1367", "Recalled", "SS A2-70 (700/450) is an ASSUMPTION - BOM gives no class"),
  ("Module dead load = UDL w = Wm/(2 W) on each rafter over the contact length W", "Client comment R1 (no purlins); statics: 2 rafters, symmetric overhangs", "Design requirement - load-conserving derivation (check row l_udl_chk = 0)", "Contact length = module width (module parallel to rafter) is an inference"),
- ("Module wind: bolt points (wind_mode 0) vs UDL (wind_mode 1)", "Load path via 4 M8 bolts; bounding alternative provided", "Design choice, both results reported", "wind_mode 1 raises rafter UR from 0.12 to 0.41"),
+ ("Module wind applied as UDL on the rafter (wind_mode 1)", "Same tributary treatment as the module dead load: q = (N_module/2)/W normal to the rafter", "Design basis R1 (instruction); bolt-point alternative kept as check", "Bolt-point alternative (wind_mode 0) gives rafter UR 0.12; M8 bolt demand = module wind/4 in both"),
  ("Primary sources NOT opened", "law.resource.org, iitk.ac.in, docs.bentley.com, easy-calc.com, eng-tips.com", "Blocked by environment egress policy", "Cross-check every clause number against licensed code copies before issue"),
 ]
 
@@ -824,7 +824,7 @@ NOTES = [
  ("A6", "Members E250 (fy 250, fu 410). Holes at bolt gauge 27.5 from heel; frame bolt line 27.5 above block top; eccentricities between bolt line and member centroid neglected."),
  ("A7", "Single bolt per lap joint = moment-free; angle loaded through one leg (cl 7.5.1.2, single bolt, hinged). No LTB reduction (spans <= 550 mm)."),
  ("A8", "Seismic: Zone II, I = 1.0, Sa/g = 2.5, Ah per assumed component formula (Rp = 2.5). Seismic sliding is sensitive to Rp - see Register."),
- ("A10", "R1 load path: the module rests directly on the two rafters (no purlins). Module dead load is a UDL over the contact length (= module width 1134 mm) of each rafter, w = Wm/(2 W) = module weight per area x tributary width (L/2 = 1139.5 mm). The 439.5 mm module overhang beyond each rafter is carried by the module. Rafter self-weight is a UDL (stubs spread). Module WIND is transferred through the 4 M8 bolts (wind_mode 0); wind_mode 1 applies it as a UDL as well (bounding case) - both satisfy all checks."),
+ ("A10", "R1 load path: the module rests directly on the two rafters (no purlins). Module dead load is a UDL over the contact length (= module width 1134 mm) of each rafter, w = Wm/(2 W) = module weight per area x tributary width (L/2 = 1139.5 mm). The 439.5 mm module overhang beyond each rafter is carried by the module. Rafter self-weight is a UDL (stubs spread). Module WIND is treated the same way: UDL over the contact length, q = (N_module/2)/W normal to the rafter (wind_mode 1, design basis); the 4 M8 bolts still carry the connection (bolt demand = module wind force/4). wind_mode 0 (point loads at the bolts) is kept as an alternate check."),
  ("A9", "J-bolt: plain-bar bond (tau_bd 1.2, M20) + standard hook 16 phi; practical minimum embedment 100 mm; concrete cone breakout not checked (no IS provision)."),
  ("NOT INCLUDED", None),
  ("N1", "Roof slab / beam capacity under ballast (average load on Summary) - building structural engineer to confirm."),
@@ -865,7 +865,7 @@ def sh_index(bk):
     for c in range(1, 4): ws.cell(1, c).fill = PatternFill("solid", fgColor=NAVY)
     info = [("Client / EPC", "M/s Sai Babuji Projects Pvt Ltd"), ("Design & Engg", "M/s JSP Solar Energy"), ("Drawing", "AL-001 R0 (10.09.2026, For Information)"),
             ("Structure", "ISA 50x50x5 frame, 10.115 deg tilt, ballast blocks + J-bolts, 82 tables"), ("Codes", "IS 875 (Pt 1,3), IS 800:2007 LSD, IS 456:2000 (anchorage), IS 1893 (Pt 1):2016"),
-            ("Revision", "R1 - module dead load as UDL on rafters per client comment (see sheet Revision; R0 superseded)")]
+            ("Revision", "R1 - module dead load and wind as UDL on the rafters (see sheet Revision; R0 superseded)")]
     for i, (a, b) in enumerate(info):
         ws.cell(3 + i, 2, a).font = Font(bold=True); ws.cell(3 + i, 3, b)
     r = 10
@@ -891,7 +891,7 @@ def sh_revision(bk):
     R0 = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "R0_results.json")))
     ws = bk.wb.create_sheet("Revision"); ws.sheet_properties.tabColor = "00B050"; ws.sheet_view.showGridLines = False
     for i, w in enumerate((5, 58, 30, 24, 12, 52), 1): ws.column_dimensions[CL(i)].width = w
-    ws.cell(1, 1, "REVISION R1  -  module dead load applied as UDL on the rafters (client comment)").font = Font(bold=True, size=14, color="FFFFFF")
+    ws.cell(1, 1, "REVISION R1  -  module dead load and wind applied as UDL on the rafters").font = Font(bold=True, size=14, color="FFFFFF")
     for c in range(1, 7): ws.cell(1, c).fill = PatternFill("solid", fgColor=NAVY)
     r = 3
     def block(title, lines):
@@ -906,13 +906,14 @@ def sh_revision(bk):
     block("Response", ["1. Module dead load is now a UDL on each rafter over the module contact length: w = (Wm / (L x W)) x (L/2) = Wm / (2 W). Module 2279 x 1134 mm, 29.1 kg -> 0.1105 kN/m2; tributary width per rafter = 1139.5 mm (2 rafters at 1400 c/c, 439.5 mm overhang each side carried by the module); contact length along the rafter = 1134 mm (centred on the 4 module bolts, inside the rafter's physical length). w = 0.1259 kN/m (see sheet Loads, rows l_pm .. l_udl_chk).",
                        "2. Rafter self-weight is also a UDL (previously lumped at the bolts). Seismic mass of module and rafter follows the same UDL.",
                        "3. STAAD: two extra nodes (Pa, Pb) mark the contact zone; UNI GY loads on members 8-11 (module) and 7-12 (rafter). Statics, member checks, connection, deflection and the module-bolt demand rows were revised; analysis rows now carry the UDL zones with an exact zero-shear peak moment.",
-                       "4. Module WIND: transferred to the rafter through the 4 M8 module bolts (point loads at the bolts, wind_mode 0 - unchanged from R0). The bounding alternative with wind also applied as a UDL (wind_mode 1) is available at one input cell and reported in the report; both satisfy every check.",
+                       "4. Module WIND is applied the same way (instruction): a UDL over the contact length, q = (N_module / 2) / W normal to the rafter (0.9380 N/mm uplift, 0.5233 N/mm downward) - wind_mode 1, the design basis. The four M8 bolts still carry the module to the rafter (bolt demand = module wind force / 4, unchanged). The R0-style point loads at the bolts remain available as an alternate (wind_mode 0).",
                        "5. Ballast, J-bolt and base-member results are unchanged because the resultant and its line of action are unchanged: only the rafter itself is affected."])
     for i, h in enumerate(["", "Quantity", "R0 (point loads at module bolts)", "R1 (UDL, live from this workbook)", "R1 / R0", "Comment"], 1):
         c = ws.cell(r, i, h); c.font = Font(bold=True, color="FFFFFF", size=9); c.fill = PatternFill("solid", fgColor="44546A"); c.alignment = Alignment(wrap_text=True, horizontal="center")
     r += 1
     rows = [("Module dead load on rafter (N/mm)", "2 x Wm/4 point loads", "=l_udl_m", None, "0.00000", "UDL over 1134 mm"),
-            ("Rafter max |M|, strength combinations (N.m)", R0["env"]["inc_M"]/1e3, "=m_iM/1000", "r", "0.00", "governs rafter bending; combo C1"),
+            ("Module wind on rafter (N/mm, uplift, normal)", "2 x 531.9 N at the module bolts", "=l_qu", None, "0.00000", "UDL over 1134 mm"),
+            ("Rafter max |M|, strength combinations (N.m)", R0["env"]["inc_M"]/1e3, "=m_iM/1000", "r", "0.00", "now governed by wind uplift (C2)"),
             ("Rafter N+M utilisation (tension) cl 9.3.1", R0["member_ur"]["Inclined  N+M (T)  cl 9.3.1"], "=mk_iT_ur", "r", "0.000", "PASS"),
             ("Rafter N+M utilisation (compression)", R0["member_ur"]["Inclined  N+M (C)  cl 9.3.1"], "=mk_iC_ur", "r", "0.000", "PASS"),
             ("Rafter shear utilisation", R0["member_ur"]["Inclined  shear cl 8.4"], "=mk_iV_ur", "r", "0.000", ""),

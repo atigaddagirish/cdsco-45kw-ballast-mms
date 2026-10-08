@@ -133,11 +133,12 @@ def build(out, backend=None):
     R.B([("Accepted and implemented. ", "The module dead load is now a UDL on each rafter over the module contact length: w = (Wm / (L x W)) x (L / 2) = Wm / (2 W) = %.4f N/mm (= %.4f kN/m), acting over %.0f mm of the rafter (%.1f to %.1f mm from bolt B). Derivation in Section 4.2 and Fig 2." % (L["wm"], L["wm"], g["Lm"], g["sa"], g["sb"])),
          ("Rafter self-weight ", "is also a UDL (%.4f N/mm over B-C) instead of being lumped at the bolts; seismic mass of module and rafter follows the same distribution." % L["wr"]),
          ("STAAD model: ", "two additional nodes (Pa, Pb) delimit the contact zone; module weight is applied as UNI GY on members 8-11 (rafter members 7-12 carry the rafter self-weight). No joint loads remain for dead load except the vertical member and base stubs."),
-         ("Module wind ", "is a different load path: wind suction/pressure is transferred through the four M8 module bolts, so it remains point loads at the bolts (wind_mode 0, as R0). As a bounding case the wind is also applied as a UDL over the contact length (wind_mode 1, alternate STAAD file); both satisfy every check (Section 11)."),
+         ("Module wind ", "is likewise a load on the module surface and is applied the same way (instruction): UDL over the contact length, q = (N_module / 2) / W normal to the rafter = %.4f N/mm uplift / %.4f N/mm downward (wind_mode 1, design basis). The four M8 bolts still carry the module-to-rafter connection (bolt demand = module wind force / 4, unchanged). The R0-style point loads at the bolts are kept as an alternate check (Section 11)." % (w["N_up"]/2/g["Lm"], w["N_dn"]/2/g["Lm"])),
          ("Effect: ", "only the rafter changes. Peak rafter moment %.1f N.m (R0 %.1f), rafter utilisation %.2f (R0 %.2f). Reactions, J-bolt forces, base member, bolts and the ballast result are unchanged (resultant and line of action of the module load are the same)." % (env["inc_M"]/1e3, R0["env"]["inc_M"]/1e3, o["chk_member"]["Inclined  N+M (T)  cl 9.3.1"][0], R0["member_ur"]["Inclined  N+M (T)  cl 9.3.1"]))])
     c2 = cmb["C2 0.9DL+1.5WL(up)"]
     R.T(["Quantity", "R0 (point loads at bolts)", "R1 (UDL)", "Change"],
         [["Module dead load on a rafter", "2 x %.1f N at the module bolts" % (L["Wm"]/4), "%.4f N/mm over %.0f mm" % (L["wm"], g["Lm"]), "UDL"],
+         ["Module wind uplift on a rafter (normal)", "2 x %.1f N at the module bolts" % (w["N_up"]/4), "%.4f N/mm over %.0f mm" % (w["N_up"]/2/g["Lm"], g["Lm"]), "UDL"],
          ["Rafter max |M|, strength combos (N.m)", "%.1f" % (R0["env"]["inc_M"]/1e3), "%.1f" % (env["inc_M"]/1e3), "x %.2f" % (env["inc_M"]/R0["env"]["inc_M"])],
          ["Rafter N+M utilisation (tension / compression)", "%.3f / %.3f" % (R0["member_ur"]["Inclined  N+M (T)  cl 9.3.1"], R0["member_ur"]["Inclined  N+M (C)  cl 9.3.1"]), "%.3f / %.3f" % (o["chk_member"]["Inclined  N+M (T)  cl 9.3.1"][0], o["chk_member"]["Inclined  N+M (C)  cl 9.3.1"][0]), "PASS"],
          ["Rafter deflection, service (mm; limit %.2f)" % o["defl_lim"]["inc"], "%.3f" % max(v["inc"] for v in R0["defl"].values()), "%.3f" % max(v["inc"] for v in o["defl"].values()), "PASS"],
@@ -215,7 +216,7 @@ def build(out, backend=None):
 
     R.H("5  Analysis")
     R.P("The frame is analysed as a plane model (STAAD file staad/CDSCO_45kW_Ballast_Frame.std, 12 nodes, 12 members): single-bolt joints are moment-free (vertical member is a truss element; rafter pinned at C); "
-        "the base member is continuous over four rigid J-bolt supports (J1 restrained in X and Y, J2-J4 in Y). R1 loads: module dead load and rafter self-weight are UDLs on the rafter (zone Pa-Pb, members 8-11 / 7-12); wind acts through the four module bolts (joint loads at S1, S2). "
+        "the base member is continuous over four rigid J-bolt supports (J1 restrained in X and Y, J2-J4 in Y). R1 loads: module dead load and rafter self-weight are UDLs on the rafter (zone Pa-Pb, members 8-11 / 7-12); module wind is a UDL over the same zone (UNI GX/GY on members 8-11). "
         "The rafter and vertical member are statically determinate; its internal forces use closed-form shear/moment with the UDL zones and the exact zero-shear section. The base beam is solved with the three-moment equation in the workbook and with a full stiffness solution in STAAD.")
     R.T(["Result (per frame)", "C1 1.5DL+1.5WL(dn)", "C2 0.9DL+1.5WL(up)"],
         [["J1 reaction FY (N)", "%.1f" % C1["R1"], "%.1f" % C2["R1"]], ["J2 reaction FY (N)", "%.1f" % C1["R2"], "%.1f" % C2["R2"]], ["J3 reaction FY (N)", "%.1f" % C1["R3"], "%.1f" % C2["R3"]],
@@ -297,10 +298,10 @@ def build(out, backend=None):
     R.H("11  Sensitivity to the decisive assumptions")
     R.T(["Scenario", "pd (kN/m2)", "Required block length (mm)", "Governs", "Max UR at 650 mm", "Seismic sliding UR"],
         [[lab, "%.3f" % pd_, "%d (%.0f)" % (lrr, lr), gov, "%.2f" % mur, "%.2f" % eq] for lab, pd_, lr, lrr, gov, mur, eq in sensitivity.run()], widths=[5.6, 1.8, 3.0, 2.0, 2.4, 2.4])
-    pw = E.P0(); pw["wind_mode"] = 1; ow = E.design(pw)
+    pw = E.P0(); pw["wind_mode"] = 0; ow = E.design(pw)
     f_ = lambda oo, k: oo["chk_member"][k][0]
-    R.P("Module wind as UDL (wind_mode 1) instead of through the four bolts - bounding case for the rafter:", bold=True)
-    R.T(["Item", "Wind at 4 bolts (R1 base)", "Wind as UDL (alt)"],
+    R.P("Module wind as point loads at the four bolts (wind_mode 0, R0-style load path) - alternate check for the rafter:", bold=True)
+    R.T(["Item", "Wind as UDL (R1 design basis)", "Wind at the 4 bolts (alternate)"],
         [["Rafter max |M| (N.m)", "%.1f" % (env["inc_M"]/1e3), "%.1f" % (ow["env"]["inc_M"]/1e3)], ["Rafter N+M utilisation (tension)", "%.3f" % f_(o, "Inclined  N+M (T)  cl 9.3.1"), "%.3f" % f_(ow, "Inclined  N+M (T)  cl 9.3.1")],
          ["Rafter N+M utilisation (compression)", "%.3f" % f_(o, "Inclined  N+M (C)  cl 9.3.1"), "%.3f" % f_(ow, "Inclined  N+M (C)  cl 9.3.1")],
          ["Rafter deflection (mm; limit %.2f)" % o["defl_lim"]["inc"], "%.3f" % max(v["inc"] for v in o["defl"].values()), "%.3f" % max(v["inc"] for v in ow["defl"].values())],

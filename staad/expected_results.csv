@@ -1,11 +1,12 @@
 combo,FY_J1_N,FY_J2_N,FY_J3_N,FY_J4_N,FX_J1_N,axial_AB_N(tension+),vert_disp_A_mm(down+),vert_disp_C_mm(down+),rafter_Mz_at_node9_N.mm(abs),note
-C1 1.5DL+1.5WL(dn),1263.502,-623.943,-585.153,1187.025,156.323,-592.969,0.09003,0.08779,58725.5,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
-C2 0.9DL+1.5WL(up),-1468.467,774.134,738.820,-1396.158,-280.238,724.502,-0.10443,-0.10297,6083.9,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
+C1 1.5DL+1.5WL(dn),1263.502,-623.943,-585.153,1187.025,156.323,-592.969,0.09003,0.08779,174658.0,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
+C2 0.9DL+1.5WL(up),-1468.467,774.134,738.820,-1396.158,-280.238,724.502,-0.10443,-0.10297,213913.6,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
 C3 1.5DL+1.5EQ(+x),327.481,-140.775,-132.842,311.340,-36.520,-138.950,0.02345,0.02311,40716.9,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
 C4 1.5DL-1.5EQ(+x),338.373,-147.101,-126.426,300.357,36.520,-143.998,0.02417,0.02236,42196.1,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
 C5 0.9DL+1.5EQ(+x),194.310,-83.200,-80.989,189.000,-36.520,-82.360,0.01392,0.01402,24134.3,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
 C6 0.9DL-1.5EQ(+x),205.202,-89.526,-74.572,178.018,36.520,-87.408,0.01465,0.01327,25613.5,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
-S1 DL+WL(dn),842.335,-415.962,-390.102,791.350,104.216,-395.313,0.06002,0.05853,39150.4,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
-S2 DL+WL(up),-890.197,477.706,457.977,-849.212,-186.825,445.275,-0.06327,-0.06258,6999.1,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
+S1 DL+WL(dn),842.335,-415.962,-390.102,791.350,104.216,-395.313,0.06002,0.05853,116438.7,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
+S2 DL+WL(up),-890.197,477.706,457.977,-849.212,-186.825,445.275,-0.06327,-0.06258,131554.0,STAAD: axial +ve=compression; reaction FY up=+; Mz = member 9 (S1-M) end node 9
 
 CHECK LC1 sum FY reactions (N),243.469,,,,,,,,,must equal sum of reactions for load case 1 (confirms UNI GY per unit member length)
+CHECK LC2 sum FY reactions (N),-1047.196,,,,,,,,,LC2 (wind uplift) total vertical = -1047.196 N upward load -> reactions sum to -1047.196 N (downward on supports)

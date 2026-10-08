@@ -36,7 +36,7 @@ def generate(p=None):
     w("* R1: NO PURLINS - module rests on the rafters. Module dead load is a")
     w("* UDL (UNI) on the rafter over the module contact zone Pa-Pb (members")
     w("* 8-11), w = Wm/(2 W) = module weight/area x tributary width L/2.")
-    w("* Module wind: %s" % ("through the 4 module bolts (joint loads at S1,S2)" if mode == 0 else "UDL over contact zone (bounding case)"))
+    w("* Module wind: %s" % ("ALTERNATE - through the 4 module bolts (joint loads S1,S2)" if mode == 0 else "UDL over contact zone Pa-Pb (UNI GX/GY, members 8-11)"))
     w("* Pinned bolt joints; base beam continuous on 4 J-bolt supports.")
     w("* ONE frame (table = 2 frames); loads per frame. See Excel STAAD_Map.")
     w("UNIT METER KN")
@@ -92,6 +92,6 @@ def generate(p=None):
 if __name__ == "__main__":
     base = os.path.dirname(os.path.abspath(__file__)) + "/../staad"
     os.makedirs(base + "/alt", exist_ok=True)
-    for mode, out in ((0, base + "/CDSCO_45kW_Ballast_Frame.std"), (1, base + "/alt/CDSCO_45kW_Ballast_Frame_R1_windUDL.std")):
+    for mode, out in ((1, base + "/CDSCO_45kW_Ballast_Frame.std"), (0, base + "/alt/CDSCO_45kW_Ballast_Frame_R1_windBolts.std")):
         p = E.P0(); p["wind_mode"] = mode; txt, o = generate(p); open(out, "w", newline="\r\n").write(txt)
         print("wrote", os.path.relpath(out, base), "| lines", txt.count("\n"), "| max line len", max(len(l) for l in txt.splitlines()))

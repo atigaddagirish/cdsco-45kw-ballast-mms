@@ -20,15 +20,16 @@
 - **Accepted and implemented.** The module dead load is now a UDL on each rafter over the module contact length: w = (Wm / (L x W)) x (L / 2) = Wm / (2 W) = 0.1259 N/mm (= 0.1259 kN/m), acting over 1134 mm of the rafter (16.5 to 1150.5 mm from bolt B). Derivation in Section 4.2 and Fig 2.
 - **Rafter self-weight** is also a UDL (0.0395 N/mm over B-C) instead of being lumped at the bolts; seismic mass of module and rafter follows the same distribution.
 - **STAAD model:** two additional nodes (Pa, Pb) delimit the contact zone; module weight is applied as UNI GY on members 8-11 (rafter members 7-12 carry the rafter self-weight). No joint loads remain for dead load except the vertical member and base stubs.
-- **Module wind** is a different load path: wind suction/pressure is transferred through the four M8 module bolts, so it remains point loads at the bolts (wind_mode 0, as R0). As a bounding case the wind is also applied as a UDL over the contact length (wind_mode 1, alternate STAAD file); both satisfy every check (Section 11).
-- **Effect:** only the rafter changes. Peak rafter moment 58.7 N.m (R0 28.2), rafter utilisation 0.11 (R0 0.05). Reactions, J-bolt forces, base member, bolts and the ballast result are unchanged (resultant and line of action of the module load are the same).
+- **Module wind** is likewise a load on the module surface and is applied the same way (instruction): UDL over the contact length, q = (N_module / 2) / W normal to the rafter = 0.9380 N/mm uplift / 0.5233 N/mm downward (wind_mode 1, design basis). The four M8 bolts still carry the module-to-rafter connection (bolt demand = module wind force / 4, unchanged). The R0-style point loads at the bolts are kept as an alternate check (Section 11).
+- **Effect:** only the rafter changes. Peak rafter moment 213.9 N.m (R0 28.2), rafter utilisation 0.40 (R0 0.05). Reactions, J-bolt forces, base member, bolts and the ballast result are unchanged (resultant and line of action of the module load are the same).
 
 | Quantity | R0 (point loads at bolts) | R1 (UDL) | Change |
 |---|---|---|---|
 | Module dead load on a rafter | 2 x 71.4 N at the module bolts | 0.1259 N/mm over 1134 mm | UDL |
-| Rafter max \|M\|, strength combos (N.m) | 28.2 | 58.7 | x 2.08 |
-| Rafter N+M utilisation (tension / compression) | 0.054 / 0.058 | 0.111 / 0.116 | PASS |
-| Rafter deflection, service (mm; limit 6.48) | 0.200 | 0.407 | PASS |
+| Module wind uplift on a rafter (normal) | 2 x 531.9 N at the module bolts | 0.9380 N/mm over 1134 mm | UDL |
+| Rafter max \|M\|, strength combos (N.m) | 28.2 | 213.9 | x 7.59 |
+| Rafter N+M utilisation (tension / compression) | 0.054 / 0.058 | 0.402 / 0.406 | PASS |
+| Rafter deflection, service (mm; limit 6.48) | 0.200 | 1.292 | PASS |
 | Max J-bolt tension, factored (N) | 1468.5 | 1468.5 | unchanged |
 | Reactions J1..J4, combination C2 (N) | -1468.5, 774.2, 738.8, -1396.1 | -1468.5, 774.1, 738.8, -1396.2 | <= 0.1 N |
 | Required block length, 300 x 250 section (mm) | 633.4 | 633.4 | unchanged |
@@ -38,15 +39,15 @@
 
 | Check group | Result | Status |
 |---|---|---|
-| Members (8 checks) | max UR = 0.21 | **PASS** |
+| Members (8 checks) | max UR = 0.41 | **PASS** |
 | Frame bolts M10 / M12 / M8 (BOM) | max UR = 0.05 | **PASS** |
 | Ballast - uplift / sliding / overturning (300x250x650 blocks) | UR 0.68 / 0.93 / 0.77 | **PASS** |
 | Required block length (sliding governs) | 650 mm  (119 kg per block; 1.89 kN/m2 average roof load) | **REVIEW** |
 | J-bolt anchorage M16 (BOM) / M10 (alternate) | UR bond 0.07 / 0.15 ; required length 150 / 140 mm | **PASS** |
-| Deflection (L/180) | UR 0.06 | **PASS** |
+| Deflection (L/180) | UR 0.20 | **PASS** |
 | Drawing: Ø18 J-bolt hole edge distance (IS 800 cl 10.2.4.2) | 22.5 mm provided < 27 mm required | **FAIL** |
 
-- **Ballast governs the design.** Structural members and bolts are lightly stressed (UR <= 0.21); the ballast blocks are sized by SLIDING under wind uplift (friction mu = 0.4). The drawing does not give the block length; 650 mm is required for 300 x 250 blocks.
+- **Ballast governs the design.** Structural members and bolts are lightly stressed (UR <= 0.41); the ballast blocks are sized by SLIDING under wind uplift (friction mu = 0.4). The drawing does not give the block length; 650 mm is required for 300 x 250 blocks.
 - **M10 J-bolts are adequate.** M10 satisfies every IS 800 / IS 456 check (steel UR 0.04, bond + hook UR 0.15) and, unlike the drawn Ø18 holes, M10 in a Ø12 hole meets the edge-distance rule (Section 12).
 - **Decisive assumptions:** design life factor k1 (0.91 vs 1.0), terrain category, roof friction, and the seismic component factor Rp (Section 11). All are single input cells in the workbook.
 
@@ -91,7 +92,7 @@ Loads act in the plane of the legs, so the angle bends obliquely. Stress is eval
 - Members E250 (fy 250, fu 410). Holes at bolt gauge 27.5 from heel; frame bolt line 27.5 above block top; eccentricities between bolt line and member centroid neglected.
 - Single bolt per lap joint = moment-free; angle loaded through one leg (cl 7.5.1.2, single bolt, hinged). No LTB reduction (spans <= 550 mm).
 - Seismic: Zone II, I = 1.0, Sa/g = 2.5, Ah per assumed component formula (Rp = 2.5). Seismic sliding is sensitive to Rp - see Register.
-- R1 load path: the module rests directly on the two rafters (no purlins). Module dead load is a UDL over the contact length (= module width 1134 mm) of each rafter, w = Wm/(2 W) = module weight per area x tributary width (L/2 = 1139.5 mm). The 439.5 mm module overhang beyond each rafter is carried by the module. Rafter self-weight is a UDL (stubs spread). Module WIND is transferred through the 4 M8 bolts (wind_mode 0); wind_mode 1 applies it as a UDL as well (bounding case) - both satisfy all checks.
+- R1 load path: the module rests directly on the two rafters (no purlins). Module dead load is a UDL over the contact length (= module width 1134 mm) of each rafter, w = Wm/(2 W) = module weight per area x tributary width (L/2 = 1139.5 mm). The 439.5 mm module overhang beyond each rafter is carried by the module. Rafter self-weight is a UDL (stubs spread). Module WIND is treated the same way: UDL over the contact length, q = (N_module/2)/W normal to the rafter (wind_mode 1, design basis); the 4 M8 bolts still carry the connection (bolt demand = module wind force/4). wind_mode 0 (point loads at the bolts) is kept as an alternate check.
 - J-bolt: plain-bar bond (tau_bd 1.2, M20) + standard hook 16 phi; practical minimum embedment 100 mm; concrete cone breakout not checked (no IS provision).
 
 ## 4  Loads
@@ -156,7 +157,7 @@ Support arrangement: no purlins - each module (L x W = 2279 x 1134 mm) rests dir
 
 ## 5  Analysis
 
-The frame is analysed as a plane model (STAAD file staad/CDSCO_45kW_Ballast_Frame.std, 12 nodes, 12 members): single-bolt joints are moment-free (vertical member is a truss element; rafter pinned at C); the base member is continuous over four rigid J-bolt supports (J1 restrained in X and Y, J2-J4 in Y). R1 loads: module dead load and rafter self-weight are UDLs on the rafter (zone Pa-Pb, members 8-11 / 7-12); wind acts through the four module bolts (joint loads at S1, S2). The rafter and vertical member are statically determinate; its internal forces use closed-form shear/moment with the UDL zones and the exact zero-shear section. The base beam is solved with the three-moment equation in the workbook and with a full stiffness solution in STAAD.
+The frame is analysed as a plane model (STAAD file staad/CDSCO_45kW_Ballast_Frame.std, 12 nodes, 12 members): single-bolt joints are moment-free (vertical member is a truss element; rafter pinned at C); the base member is continuous over four rigid J-bolt supports (J1 restrained in X and Y, J2-J4 in Y). R1 loads: module dead load and rafter self-weight are UDLs on the rafter (zone Pa-Pb, members 8-11 / 7-12); module wind is a UDL over the same zone (UNI GX/GY on members 8-11). The rafter and vertical member are statically determinate; its internal forces use closed-form shear/moment with the UDL zones and the exact zero-shear section. The base beam is solved with the three-moment equation in the workbook and with a full stiffness solution in STAAD.
 
 | Result (per frame) | C1 1.5DL+1.5WL(dn) | C2 0.9DL+1.5WL(up) |
 |---|---|---|
@@ -166,7 +167,7 @@ The frame is analysed as a plane model (STAAD file staad/CDSCO_45kW_Ballast_Fram
 | J4 reaction FY (N) | 1187.0 | -1396.2 |
 | J1 horizontal reaction FX (N) | 156.3 | -280.2 |
 | Vertical member axial (tension +, N) | -593.0 | 724.5 |
-| Rafter \|M\| at bolt 1 / bolt 2 / peak (N.m) | 23.0 / 22.2 / 58.7 | 28.3 / 27.3 / 6.1 |
+| Rafter \|M\| at bolt 1 / bolt 2 / peak (N.m) | 22.8 / 22.0 / 174.7 | 27.9 / 26.9 / 213.9 |
 | Base moment at J1 / J2 / J3 / J4 (N.m) | -90.4 / 5.9 / 5.1 / -85.8 | 105.1 / -9.0 / -8.3 / 100.9 |
 
 Note the J-bolt reactions: continuity of the base angle over each bolt pair turns the overhang load into a couple, so J1 carries about four times the average uplift share (Fig 4).
@@ -190,9 +191,9 @@ Note the J-bolt reactions: continuity of the base angle over each bolt pair turn
 |---|---|---|---|
 | Vertical - tension (cl 6.2, 6.3) | 725 N | Td = 87230 N | 0.008 |
 | Vertical - compression (cl 7.1.2, 7.5.1.2, Table 12) | 593 N | Pd = 37026 N (lambda_e 1.43) | 0.016 |
-| Inclined - N + M tension (cl 9.3.1) | N 104 N, M 58.7 N.m | Td, Md = 534 N.m | 0.111 |
-| Inclined - N + M compression (cl 9.3.2) | N 157 N, M 58.7 N.m | Pd = 27906 N | 0.116 |
-| Inclined - shear (cl 8.4) | 719 N | Vd = 32804 N | 0.022 |
+| Inclined - N + M tension (cl 9.3.1) | N 104 N, M 213.9 N.m | Td, Md = 534 N.m | 0.402 |
+| Inclined - N + M compression (cl 9.3.2) | N 157 N, M 213.9 N.m | Pd = 27906 N | 0.406 |
+| Inclined - shear (cl 8.4) | 716 N | Vd = 32804 N | 0.022 |
 | Base - N + M at J-bolt sections (net of Ø18 hole) | M 105.1 N.m | Md(net) = 516 N.m | 0.208 |
 | Base - N + M at mid-span | M 48.1 N.m | Md = 534 N.m | 0.095 |
 | Base - shear (cl 8.4) | 763 N | Vd = 32804 N | 0.023 |
@@ -269,7 +270,7 @@ Roof load: 4 blocks x 119 kg + array = 1.89 kN/m2 average over the table footpri
 
 | Member | Service combination | Deflection (mm) | Limit (mm) | UR |
 |---|---|---|---|---|
-| Inclined B-C, mid-span (L/180) | DL + WL (up) | 0.029 | 6.48 | 0.004 |
+| Inclined B-C, mid-span (L/180) | DL + WL (up) | 1.292 | 6.48 | 0.200 |
 | Base overhang at A (2a/180) | DL + WL (up) | 0.063 | 1.64 | 0.039 |
 | Base overhang at C (2c/180) | DL + WL (up) | 0.063 | 1.67 | 0.038 |
 
@@ -287,14 +288,14 @@ Roof load: 4 blocks x 119 kg + array = 1.89 kN/m2 average over the table footpri
 | Seismic Rp = 1.0 (no reduction) | 0.910 | 650 (633) | Sliding | 1.04 | 1.04 |
 | Worst: k1=1.0 + roof 15 m + mu=0.3 | 1.157 | 950 (916) | Sliding | 3.63 | 0.56 |
 
-**Module wind as UDL (wind_mode 1) instead of through the four bolts - bounding case for the rafter:**
+**Module wind as point loads at the four bolts (wind_mode 0, R0-style load path) - alternate check for the rafter:**
 
-| Item | Wind at 4 bolts (R1 base) | Wind as UDL (alt) |
+| Item | Wind as UDL (R1 design basis) | Wind at the 4 bolts (alternate) |
 |---|---|---|
-| Rafter max \|M\| (N.m) | 58.7 | 213.9 |
-| Rafter N+M utilisation (tension) | 0.111 | 0.402 |
-| Rafter N+M utilisation (compression) | 0.116 | 0.406 |
-| Rafter deflection (mm; limit 6.48) | 0.407 | 1.292 |
+| Rafter max \|M\| (N.m) | 213.9 | 58.7 |
+| Rafter N+M utilisation (tension) | 0.402 | 0.111 |
+| Rafter N+M utilisation (compression) | 0.406 | 0.116 |
+| Rafter deflection (mm; limit 6.48) | 1.292 | 0.407 |
 | Reactions / ballast / J-bolts | as reported | identical (resultant unchanged): L_req 633.4 / 633.4 mm |
 
 Reading: the required block length moves between 550 mm (Category 3) and 950 mm (combined worst case); sliding governs in every case, so a higher roof friction coefficient (tested value) is the most economical lever. Seismic sliding exceeds 1.0 at Rp = 1.0 for any block size: the IS 1893 component provisions must be confirmed before issue.
@@ -347,6 +348,6 @@ Reading: the required block length moves between 550 mm (Category 3) and 950 mm 
 | 17 | Concrete 24 kN/m3, steel 78.5 kN/m3 | IS 875-1 Table 1 | Recalled |  |
 | 18 | Bolt stress areas M8 36.6, M10 58, M12 84.3, M16 157 mm2; 8.8: fub 800, fyb 640 | ISO 898-1 / IS 1367 | Recalled | SS A2-70 (700/450) is an ASSUMPTION - BOM gives no class |
 | 19 | Module dead load = UDL w = Wm/(2 W) on each rafter over the contact length W | Client comment R1 (no purlins); statics: 2 rafters, symmetric overhangs | Design requirement - load-conserving derivation (check row l_udl_chk = 0) | Contact length = module width (module parallel to rafter) is an inference |
-| 20 | Module wind: bolt points (wind_mode 0) vs UDL (wind_mode 1) | Load path via 4 M8 bolts; bounding alternative provided | Design choice, both results reported | wind_mode 1 raises rafter UR from 0.12 to 0.41 |
+| 20 | Module wind applied as UDL on the rafter (wind_mode 1) | Same tributary treatment as the module dead load: q = (N_module/2)/W normal to the rafter | Design basis R1 (instruction); bolt-point alternative kept as check | Bolt-point alternative (wind_mode 0) gives rafter UR 0.12; M8 bolt demand = module wind/4 in both |
 | 21 | Primary sources NOT opened | law.resource.org, iitk.ac.in, docs.bentley.com, easy-calc.com, eng-tips.com | Blocked by environment egress policy | Cross-check every clause number against licensed code copies before issue |
 

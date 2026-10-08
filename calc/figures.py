@@ -98,7 +98,7 @@ def fig_loads(o, path):
                 q = pt(sp); head = q if qy < 0 else (q[0] + qx*K, q[1] + qy*K); tail = (q[0] - qx*K, q[1] - qy*K) if qy < 0 else q
                 arrow(ax, tail, head, col if key == "qm" else "#7F7F7F", lw=0.9 if key == "qm" else 0.7)
             top = (pt((a0 + b0)/2)[0] + (qx*K if qy > 0 else -qx*K), pt((a0 + b0)/2)[1] + (qy*K if qy > 0 else -qy*K))
-            if key == "qm": ax.text(top[0] + 20, top[1] + 30, "module UDL %.4f N/mm\n(= %.4f kN/m) over %.0f mm" % (mag, mag, g["Lm"]), fontsize=7, color=col)
+            if key == "qm": ax.text(top[0] + 20, top[1] + 30, "%s UDL %.4f N/mm\n(= %.4f kN/m) over %.0f mm" % ("module" if lc == "DL" else "wind (normal)", mag, mag, g["Lm"]), fontsize=7, color=col)
         fx, fy = d["slots"][0]; mag = math.hypot(fx, fy)
         if mag > 1e-9:
             kk = 230/531.0
@@ -108,7 +108,7 @@ def fig_loads(o, path):
         if lc == "DL":
             ax.text(600, 40, "rafter self-weight UDL %.4f N/mm (grey); base UDL %.4f N/mm;\nvertical member + stubs lumped at A, C" % (L["wr"], d["wb"]), fontsize=6.5, ha="center")
         else:
-            ax.text(600, 40, "%s\npd = %.3f kN/m2, A = %.3f m2" % ("through the 4 module bolts (wind_mode 0)" if p["wind_mode"] == 0 else "UDL over contact zone (wind_mode 1)", w["pd"], w["A_mod"]), fontsize=6.5, ha="center")
+            ax.text(600, 40, "%s\npd = %.3f kN/m2, A = %.3f m2" % ("through the 4 module bolts (alternate, wind_mode 0)" if p["wind_mode"] == 0 else "UDL over the module contact zone (wind_mode 1)", w["pd"], w["A_mod"]), fontsize=6.5, ha="center")
         ax.set_title(ttl, fontsize=8.5); ax.set_xlim(-150, 1300); ax.set_ylim(-60, 950); ax.set_aspect("equal"); ax.axis("off")
     fig.suptitle("Fig 3  Load cases applied to one frame; IS 875 Pt 3 wind, IS 875 Pt 1 dead load", fontsize=9, x=0.01, ha="left")
     fig.tight_layout(); fig.savefig(path, dpi=160); plt.close(fig)
@@ -208,7 +208,8 @@ def fig_udl(o, path):
 def fig_rafter(o, path):
     """Rafter bending moment, governing strength combination C1 (UDL module + wind at bolts)."""
     import json, solver2d
-    g, p = o["g"], o["p"]; n = "C1 1.5DL+1.5WL(dn)"; c = o["cmb"][n]; fac = dict(E.COMBOS)[n] if False else {"DL": 1.5, "WLD": 1.5}
+    g, p = o["g"], o["p"]; Uc = [t for t in E.COMBOS if t[2] == "U"]
+    n, fac, _k = max(Uc, key=lambda t: max(abs(o["cmb"][t[0]][k]) for k in ("Minc1", "Minc2", "Mstar"))); c = o["cmb"][n]
     R0 = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "docs", "R0_results.json")))
     comb = dict(slots=[(0.0, 0.0)]*2, qm=(0.0, 0.0), qr=(0.0, 0.0), FxA=0.0, FxC=0.0, dAy=0.0, dCy=0.0, wb=0.0)
     for k, fa in fac.items():
@@ -225,10 +226,10 @@ def fig_rafter(o, path):
     ax.axvspan(g["sa"], g["sb"], color="#DEEBF7", alpha=0.5, zorder=0); ax.text(g["sa"] + 10, ax.get_ylim()[1]*0.12, "module contact zone (UDL)", fontsize=7.5, color="#1F3864")
     pk = max(ms, key=abs); xp = xs[ms.index(pk)]
     ax.annotate("R1 peak %.1f N.m at s = %.0f mm\n(closed form %.1f N.m)" % (abs(pk), xp, max(abs(c["Minc1"]), abs(c["Minc2"]), abs(c["Mstar"]))/1e3), (xp, pk), (xp + 120, pk*0.55), fontsize=8, arrowprops=dict(arrowstyle="->", lw=0.8))
-    ax.axhline(R0["env"]["inc_M"]/1e3, color="#7F7F7F", ls="--", lw=1); ax.text(g["BC"]*0.02, R0["env"]["inc_M"]/1e3 + 1.5, "R0 peak (module as bolt point loads) %.1f N.m" % (R0["env"]["inc_M"]/1e3), fontsize=7.5, color="#595959")
+    sg = 1 if pk > 0 else -1; ax.axhline(sg*R0["env"]["inc_M"]/1e3, color="#7F7F7F", ls="--", lw=1); ax.text(g["BC"]*0.02, sg*R0["env"]["inc_M"]/1e3 + sg*abs(pk)*0.03, "R0 peak (module as bolt point loads) %.1f N.m" % (R0["env"]["inc_M"]/1e3), fontsize=7.5, color="#595959", va="bottom" if sg > 0 else "top")
     for sp, lb in ((g["s1"], "bolt 1"), (g["s2"], "bolt 2")): ax.axvline(sp, color="#C00000", lw=0.6, ls=":"); ax.text(sp, min(ms)*1.0, lb, fontsize=7, color="#C00000", ha="center", va="bottom")
     ax.set_xlabel("distance along rafter from B (mm)", fontsize=8); ax.set_ylabel("M (N.m), sagging +", fontsize=8); ax.tick_params(labelsize=7)
-    ax.set_title("Fig 5  Rafter bending moment, combination C1 = 1.5 DL + 1.5 WL(down), per frame.  Capacity Md = %.0f N.m" % (o["mc"]["Mdg"]/1e3), fontsize=9, loc="left")
+    ax.set_title("Fig 5  Rafter bending moment, governing combination %s, per frame.  Capacity Md = %.0f N.m" % (n, o["mc"]["Mdg"]/1e3), fontsize=9, loc="left")
     fig.tight_layout(); fig.savefig(path, dpi=160); plt.close(fig)
 
 
