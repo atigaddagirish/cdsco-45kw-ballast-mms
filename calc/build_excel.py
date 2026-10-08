@@ -930,7 +930,7 @@ def sh_revision(bk):
         ws.cell(r, 6, cm).font = Font(size=9, italic=True)
         for cc in range(2, 6): ws.cell(r, cc).border = BORDER
         r += 1
-    r += 1; ws.cell(r, 2, "R0 values are static (from the issued R0 calculation, git tag R0); R1 values are live formulas.").font = Font(italic=True, size=9)
+    r += 1; ws.cell(r, 2, "R0 values are static (from the issued R0 calculation, repo commit 09b5d58); R1 values are live formulas.").font = Font(italic=True, size=9)
 
 
 def build(out="../excel/CDSCO_45kW_Ballast_MMS_Design_Calc.xlsx"):

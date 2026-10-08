@@ -1,7 +1,7 @@
 # CDSCO Hyderabad - 45 kWp Ballast-Type Rooftop MMS (revision R1)
 
 Client request: *editable Excel design calculations + STAAD model/analysis file for review and approval.*
-**R1 (this revision):** module dead load applied as UDL on the rafters per client comment - see `docs/04_revision_R1.md` and Excel sheet `Revision`. R0 is preserved as git tag `R0`.
+**R1 (this revision):** module dead load applied as UDL on the rafters per client comment - see `docs/04_revision_R1.md` and Excel sheet `Revision`. R0 is preserved in git history at commit `09b5d58` (docs/R0_results.json holds the R0 numbers).
 EPC: M/s Sai Babuji Projects Pvt Ltd - Design & Engg: M/s JSP Solar Energy - Drawing AL-001 R0 - Hardware BOM (82 tables).
 
 ## Deliverables
